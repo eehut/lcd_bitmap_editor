@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LCD 单色液晶显示位图编辑器</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        .controls {
+            margin: 20px;
+            padding: 10px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .canvas-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        canvas {
+            border: 1px solid #ccc;
+        }
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        input[type="number"] {
+            width: 60px;
+            margin: 0 5px;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+        input[type="range"] {
+            width: 200px;
+            margin: 0 10px;
+        }
+        .slider-value {
+            width: 40px;
+            text-align: center;
+        }
+        .checkbox-container {
+            margin: 10px 0;
+        }
+        .text-input-container {
+            margin: 10px 0;
+            padding: 10px;
+            border-top: 1px solid #ddd;
+        }
+        .font-select {
+            margin: 5px;
+            padding: 5px;
+        }
+        textarea {
+            width: 100%;
+            height: 60px;
+            margin-top: 5px;
+        }
+    </style>
+    <!-- 引入字体库和字体文件 -->
+    <script src="fonts.js"></script>
+    <script src="fonts/font_8x8.js"></script>
+    <script src="fonts/font_8x16.js"></script>
+    <script src="fonts/font_10x18.js"></script>
+</head>
+<body>
+    <h1>LCD 单色液晶显示位图编辑器</h1>
+    <div class="controls">
+        <label>
+            宽度: <input type="number" id="width" value="128" min="1" max="256">
+        </label>
+        <label>
+            高度: <input type="number" id="height" value="64" min="1" max="256">
+        </label>
+        <button onclick="updateCanvas()">更新尺寸</button>
+        <button onclick="clearCanvas()">清屏</button>
+        <button onclick="undo()" id="undoBtn" disabled>撤销</button>
+        <div class="slider-container">
+            <label>缩放:</label>
+            <input type="range" id="scale" min="1" max="20" value="8" oninput="updateScaleValue(this.value)">
+            <span class="slider-value" id="scaleValue">8</span>
+        </div>
+        <div class="checkbox-container">
+            <label>
+                <input type="checkbox" id="showGrid" checked onchange="drawBitmap()">
+                显示网格
+            </label>
+        </div>
+        
+        <div class="text-input-container">
+            <h3>放置ASCII字符</h3>
+            <div>
+                <label>字体:</label>
+                <select id="fontSelect" class="font-select">
+                    <option value="font_8x8">8x8 字体</option>
+                    <option value="font_8x16">8x16 字体</option>
+                    <option value="font_10x18">10x18 字体</option>
+                </select>
+            </div>
+            <div>
+                <label>起始坐标: X:<input type="number" id="textX" value="0" min="0" max="255"></label>
+                <label>Y:<input type="number" id="textY" value="0" min="0" max="255"></label>
+            </div>
+            <div>
+                <label>输入文本:</label>
+                <input type="text" id="asciiText" placeholder="输入ASCII字符">
+                <button onclick="drawText()">放置文本</button>
+            </div>
+        </div>
+    </div>
+    <div class="canvas-container">
+        <canvas id="bitmapCanvas"></canvas>
+    </div>
+
+    <script>
+        let canvas = document.getElementById('bitmapCanvas');
+        let ctx = canvas.getContext('2d');
+        let bitmap = [];
+        let scale = 8;
+        const LCD_BACKGROUND = '#e0e0e0'; // 传统LCD面板的灰色
+        const GRID_COLOR = '#d0d0d0'; // 浅灰色网格
+        let isDrawing = false; // 添加绘制状态标志
+        let lastX = -1; // 记录上一个绘制的X坐标
+        let lastY = -1; // 记录上一个绘制的Y坐标
+        let drawMode = 1; // 1表示绘制，0表示擦除
+        const MARGIN_TOP = 25; // 上边距，用于显示刻度
+        const MARGIN_LEFT = 25; // 左边距，用于显示刻度
+        const MARGIN_BOTTOM = 25; // 下边距，用于显示刻度
+        const MARGIN_RIGHT = 25; // 右边距，用于显示刻度
+        const SCALE_COLOR = '#3366CC'; // 刻度线和刻度值的颜色，使用更鲜明的蓝色
+        
+        // 历史状态存储，用于撤销功能
+        let history = [];
+        const MAX_HISTORY = 5; // 最大历史记录数
+
+        function initBitmap(width, height) {
+            bitmap = Array(height).fill().map(() => Array(width).fill(0));
+        }
+
+        // 保存当前状态到历史记录
+        function saveState() {
+            // 深拷贝当前bitmap
+            const stateCopy = bitmap.map(row => [...row]);
+            
+            // 添加到历史记录
+            history.push(stateCopy);
+            
+            // 如果历史记录超过最大值，删除最旧的
+            if (history.length > MAX_HISTORY) {
+                history.shift();
+            }
+            
+            // 启用撤销按钮
+            document.getElementById('undoBtn').disabled = false;
+        }
+
+        // 撤销功能
+        function undo() {
+            if (history.length > 0) {
+                // 从历史记录中获取上一个状态
+                bitmap = history.pop();
+                
+                // 如果没有更多历史记录，禁用撤销按钮
+                if (history.length === 0) {
+                    document.getElementById('undoBtn').disabled = true;
+                }
+                
+                // 重绘
+                drawBitmap();
+            }
+        }
+
+        // 清屏功能
+        function clearCanvas() {
+            // 保存当前状态到历史记录
+            saveState();
+            
+            // 清空位图
+            const width = bitmap[0].length;
+            const height = bitmap.length;
+            initBitmap(width, height);
+            
+            // 重绘
+            drawBitmap();
+        }
+
+        function updateCanvas() {
+            const width = parseInt(document.getElementById('width').value);
+            const height = parseInt(document.getElementById('height').value);
+            
+            // 保存原有的位图数据
+            const oldBitmap = bitmap;
+            
+            // 画布大小增加边距，为刻度线预留空间
+            canvas.width = width * scale + MARGIN_LEFT + MARGIN_RIGHT;
+            canvas.height = height * scale + MARGIN_TOP + MARGIN_BOTTOM;
+            
+            // 初始化新的位图
+            initBitmap(width, height);
+            
+            // 如果存在旧的位图数据，则复制到新的位图中
+            if (oldBitmap.length > 0) {
+                const minWidth = Math.min(width, oldBitmap[0].length);
+                const minHeight = Math.min(height, oldBitmap.length);
+                
+                for (let y = 0; y < minHeight; y++) {
+                    for (let x = 0; x < minWidth; x++) {
+                        bitmap[y][x] = oldBitmap[y][x];
+                    }
+                }
+            }
+            
+            // 清空历史记录
+            history = [];
+            document.getElementById('undoBtn').disabled = true;
+            
+            drawBitmap();
+        }
+
+        function updateScaleValue(value) {
+            document.getElementById('scaleValue').textContent = value;
+            scale = parseInt(value);
+            updateCanvas();
+        }
+
+        function drawGrid() {
+            if (!document.getElementById('showGrid').checked) return;
+            
+            ctx.strokeStyle = GRID_COLOR;
+            ctx.lineWidth = 0.5;
+
+            // 绘制垂直线
+            for (let x = 0; x <= bitmap[0].length; x++) {
+                ctx.beginPath();
+                ctx.moveTo(MARGIN_LEFT + x * scale, MARGIN_TOP);
+                ctx.lineTo(MARGIN_LEFT + x * scale, MARGIN_TOP + bitmap.length * scale);
+                ctx.stroke();
+                
+                // 每8个点显示一个刻度
+                if (x % 8 === 0) {
+                    // 绘制上边界刻度线
+                    ctx.beginPath();
+                    ctx.strokeStyle = SCALE_COLOR;
+                    ctx.lineWidth = 1.0;
+                    ctx.moveTo(MARGIN_LEFT + x * scale, MARGIN_TOP - 5);
+                    ctx.lineTo(MARGIN_LEFT + x * scale, MARGIN_TOP);
+                    ctx.stroke();
+                    
+                    // 绘制上边界刻度值
+                    ctx.fillStyle = SCALE_COLOR;
+                    ctx.font = 'bold 10px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(x.toString(), MARGIN_LEFT + x * scale, MARGIN_TOP - 8);
+                    
+                    // 绘制下边界刻度线
+                    ctx.beginPath();
+                    ctx.moveTo(MARGIN_LEFT + x * scale, MARGIN_TOP + bitmap.length * scale);
+                    ctx.lineTo(MARGIN_LEFT + x * scale, MARGIN_TOP + bitmap.length * scale + 5);
+                    ctx.stroke();
+                    
+                    // 绘制下边界刻度值
+                    ctx.textAlign = 'center';
+                    ctx.fillText(x.toString(), MARGIN_LEFT + x * scale, MARGIN_TOP + bitmap.length * scale + 15);
+
+                    // 恢复网格线样式
+                    ctx.strokeStyle = GRID_COLOR;
+                    ctx.lineWidth = 0.5;
+                }
+            }
+
+            // 绘制水平线
+            for (let y = 0; y <= bitmap.length; y++) {
+                ctx.beginPath();
+                ctx.moveTo(MARGIN_LEFT, MARGIN_TOP + y * scale);
+                ctx.lineTo(MARGIN_LEFT + bitmap[0].length * scale, MARGIN_TOP + y * scale);
+                ctx.stroke();
+                
+                // 每8个点显示一个刻度
+                if (y % 8 === 0) {
+                    // 绘制左边界刻度线
+                    ctx.beginPath();
+                    ctx.strokeStyle = SCALE_COLOR;
+                    ctx.lineWidth = 1.0;
+                    ctx.moveTo(MARGIN_LEFT - 5, MARGIN_TOP + y * scale);
+                    ctx.lineTo(MARGIN_LEFT, MARGIN_TOP + y * scale);
+                    ctx.stroke();
+                    
+                    // 绘制左边界刻度值
+                    ctx.fillStyle = SCALE_COLOR;
+                    ctx.font = 'bold 10px Arial';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(y.toString(), MARGIN_LEFT - 8, MARGIN_TOP + y * scale + 3);
+                    
+                    // 绘制右边界刻度线
+                    ctx.beginPath();
+                    ctx.moveTo(MARGIN_LEFT + bitmap[0].length * scale, MARGIN_TOP + y * scale);
+                    ctx.lineTo(MARGIN_LEFT + bitmap[0].length * scale + 5, MARGIN_TOP + y * scale);
+                    ctx.stroke();
+                    
+                    // 绘制右边界刻度值
+                    ctx.textAlign = 'left';
+                    ctx.fillText(y.toString(), MARGIN_LEFT + bitmap[0].length * scale + 8, MARGIN_TOP + y * scale + 3);
+
+                    // 恢复网格线样式
+                    ctx.strokeStyle = GRID_COLOR;
+                    ctx.lineWidth = 0.5;
+                }
+            }
+        }
+
+        function drawBitmap() {
+            // 清除整个画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制LCD背景色
+            ctx.fillStyle = LCD_BACKGROUND;
+            ctx.fillRect(MARGIN_LEFT, MARGIN_TOP, bitmap[0].length * scale, bitmap.length * scale);
+            
+            // 绘制位图
+            ctx.fillStyle = 'black';
+            for (let y = 0; y < bitmap.length; y++) {
+                for (let x = 0; x < bitmap[y].length; x++) {
+                    if (bitmap[y][x]) {
+                        ctx.fillRect(MARGIN_LEFT + x * scale, MARGIN_TOP + y * scale, scale, scale);
+                    }
+                }
+            }
+
+            // 绘制网格
+            drawGrid();
+        }
+
+        function getCanvasCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: Math.floor((e.clientX - rect.left - MARGIN_LEFT) / scale),
+                y: Math.floor((e.clientY - rect.top - MARGIN_TOP) / scale)
+            };
+        }
+
+        function togglePixel(x, y) {
+            if (x >= 0 && x < bitmap[0].length && y >= 0 && y < bitmap.length) {
+                bitmap[y][x] = drawMode;
+                drawBitmap();
+            }
+        }
+
+        function drawLine(x0, y0, x1, y1) {
+            const dx = Math.abs(x1 - x0);
+            const dy = Math.abs(y1 - y0);
+            const sx = x0 < x1 ? 1 : -1;
+            const sy = y0 < y1 ? 1 : -1;
+            let err = dx - dy;
+
+            while (true) {
+                togglePixel(x0, y0);
+                if (x0 === x1 && y0 === y1) break;
+                const e2 = 2 * err;
+                if (e2 > -dy) {
+                    err -= dy;
+                    x0 += sx;
+                }
+                if (e2 < dx) {
+                    err += dx;
+                    y0 += sy;
+                }
+            }
+        }
+
+        canvas.addEventListener('mousedown', function(e) {
+            if (e.button === 0) { // 左键按下
+                isDrawing = true;
+                
+                // 在开始绘制前保存当前状态
+                saveState();
+                
+                const coords = getCanvasCoordinates(e);
+                lastX = coords.x;
+                lastY = coords.y;
+                // 根据当前像素状态决定绘制模式
+                drawMode = bitmap[coords.y][coords.x] ? 0 : 1;
+                togglePixel(coords.x, coords.y);
+            }
+        });
+
+        canvas.addEventListener('mousemove', function(e) {
+            if (isDrawing) {
+                const coords = getCanvasCoordinates(e);
+                if (coords.x !== lastX || coords.y !== lastY) {
+                    drawLine(lastX, lastY, coords.x, coords.y);
+                    lastX = coords.x;
+                    lastY = coords.y;
+                }
+            }
+        });
+
+        canvas.addEventListener('mouseup', function(e) {
+            if (e.button === 0) { // 左键释放
+                isDrawing = false;
+                lastX = -1;
+                lastY = -1;
+            }
+        });
+
+        canvas.addEventListener('mouseleave', function() {
+            isDrawing = false;
+            lastX = -1;
+            lastY = -1;
+        });
+
+        // 绘制文本函数
+        function drawText() {
+            // 保存当前状态到历史记录
+            saveState();
+            
+            const fontType = document.getElementById('fontSelect').value;
+            const startX = parseInt(document.getElementById('textX').value);
+            const startY = parseInt(document.getElementById('textY').value);
+            const text = document.getElementById('asciiText').value;
+            
+            // 获取选择的字体对象
+            const fontData = LCDFont[fontType];
+            
+            if (!fontData) {
+                console.error("未找到字体数据:", fontType);
+                return;
+            }
+            
+            // 创建一个临时canvas用于渲染文字
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // 设置临时canvas的尺寸为文本的尺寸
+            tempCanvas.width = fontData.width * text.length;
+            tempCanvas.height = fontData.height;
+            
+            // 使用LCDFont库渲染文本到临时canvas
+            let curX = 0;
+            for (let i = 0; i < text.length; i++) {
+                curX = LCDFont.renderChar(tempCtx, fontData, text[i], curX, 0);
+            }
+            
+            // 从临时canvas读取像素数据并转移到bitmap
+            const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            const data = imageData.data;
+            
+            // 遍历像素数据并设置bitmap
+            for (let y = 0; y < tempCanvas.height; y++) {
+                for (let x = 0; x < tempCanvas.width; x++) {
+                    // 计算在imageData中的索引（每个像素4个值：r,g,b,a）
+                    const dataIndex = (y * tempCanvas.width + x) * 4;
+                    // 如果像素不是透明的（有颜色），则设置bitmap对应位置为1
+                    if (data[dataIndex] > 0 || data[dataIndex + 1] > 0 || data[dataIndex + 2] > 0) {
+                        const bitmapX = startX + x;
+                        const bitmapY = startY + y;
+                        // 确保坐标在bitmap范围内
+                        if (bitmapX >= 0 && bitmapX < bitmap[0].length && bitmapY >= 0 && bitmapY < bitmap.length) {
+                            bitmap[bitmapY][bitmapX] = 1;
+                        }
+                    }
+                }
+            }
+            
+            // 重绘画布
+            drawBitmap();
+        }
+
+        // 初始化画布
+        updateCanvas();
+    </script>
+</body>
+</html> 

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LCD位图字体演示</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .demo-section {
+            margin: 20px 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 20px;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            margin: 10px 0;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LCD位图字体演示</h1>
+        
+        <div class="demo-section">
+            <h2>8x8 字体</h2>
+            <canvas id="canvas8x8" width="800" height="100"></canvas>
+        </div>
+        
+        <div class="demo-section">
+            <h2>8x16 字体</h2>
+            <canvas id="canvas8x16" width="800" height="100"></canvas>
+        </div>
+        
+        <div class="demo-section">
+            <h2>10x18 字体</h2>
+            <canvas id="canvas10x18" width="800" height="100"></canvas>
+        </div>
+    </div>
+    
+    <!-- 引入字体库 -->
+    <script src="fonts.js"></script>
+    <script src="fonts/font_8x8.js"></script>
+    <script src="fonts/font_8x16.js"></script>
+    <script src="fonts/font_10x18.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 演示文本
+            const demoText = "Hello, LCD! 0123456789 ABCDEFG abcdefg";
+            
+            // 8x8 字体演示
+            const canvas8x8 = document.getElementById('canvas8x8');
+            const ctx8x8 = canvas8x8.getContext('2d');
+            const pixelSize8x8 = 3;
+            
+            // 渲染8x8字体
+            renderDemo(ctx8x8, font_8x8, demoText, pixelSize8x8, 10, 10);
+            
+            // 8x16 字体演示
+            const canvas8x16 = document.getElementById('canvas8x16');
+            const ctx8x16 = canvas8x16.getContext('2d');
+            const pixelSize8x16 = 3;
+            
+            // 渲染8x16字体
+            renderDemo(ctx8x16, font_8x16, demoText, pixelSize8x16, 10, 10);
+            
+            // 10x18 字体演示
+            const canvas10x18 = document.getElementById('canvas10x18');
+            const ctx10x18 = canvas10x18.getContext('2d');
+            const pixelSize10x18 = 2;
+            
+            // 渲染10x18字体
+            renderDemo(ctx10x18, font_10x18, demoText, pixelSize10x18, 10, 10);
+            
+            // 通用渲染函数
+            function renderDemo(ctx, fontData, text, pixelSize, x, y) {
+                // 清除画布
+                ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                
+                // 自定义渲染函数，来正确处理像素大小
+                const renderWithCustomSize = function(ctx, fontData, char, x, y) {
+                    const code = char.charCodeAt(0);
+                    const index = LCDFont.getCharIndex(fontData, char);
+                    
+                    // 获取字符数据
+                    const charData = fontData.data.slice(index, index + fontData.bytesPerChar);
+                    
+                    // 绘制字符
+                    for (let row = 0; row < fontData.height; row++) {
+                        if (fontData.width <= 8) {
+                            // 8位宽度的字体 (8x8, 8x16)
+                            const rowData = charData[row];
+                            for (let col = 0; col < fontData.width; col++) {
+                                const bit = (rowData >> (7 - col)) & 0x01;
+                                if (bit) {
+                                    ctx.fillStyle = 'black';
+                                    ctx.fillRect(x + col * pixelSize, y + row * pixelSize, pixelSize, pixelSize);
+                                }
+                            }
+                        } else if (fontData.width === 10) {
+                            // 10位宽度的字体 (10x18)，每行使用两个字节
+                            const byteIndex = row * 2;
+                            const byte1 = charData[byteIndex];
+                            const byte2 = charData[byteIndex + 1];
+                            
+                            // 从两个字节中提取10位数据
+                            for (let col = 0; col < 8; col++) {
+                                const bit = (byte1 >> (7 - col)) & 0x01;
+                                if (bit) {
+                                    ctx.fillStyle = 'black';
+                                    ctx.fillRect(x + col * pixelSize, y + row * pixelSize, pixelSize, pixelSize);
+                                }
+                            }
+                            
+                            // 从第二个字节提取剩余2位
+                            for (let col = 0; col < 2; col++) {
+                                const bit = (byte2 >> (7 - col)) & 0x01;
+                                if (bit) {
+                                    ctx.fillStyle = 'black';
+                                    ctx.fillRect(x + (8 + col) * pixelSize, y + row * pixelSize, pixelSize, pixelSize);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 返回下一个字符的x位置
+                    return x + fontData.width * pixelSize;
+                };
+                
+                // 渲染文本
+                let currentX = x;
+                for (let i = 0; i < text.length; i++) {
+                    currentX = renderWithCustomSize(ctx, fontData, text[i], currentX, y);
+                    currentX += pixelSize; // 字符间距
+                }
+            }
+        });
+    </script>
+</body>
+</html> 

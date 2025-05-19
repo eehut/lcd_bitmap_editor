@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LCD位图字体显示</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        .canvas-container {
+            margin: 20px 0;
+        }
+        canvas {
+            background-color: #fff;
+            border: 1px solid #ccc;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        input, select, button {
+            margin: 5px;
+            padding: 5px;
+        }
+        label {
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>LCD位图字体显示</h1>
+    
+    <div class="controls">
+        <label for="text-input">输入文本:</label>
+        <input type="text" id="text-input" value="Hello, LCD!">
+        
+        <label for="font-select">选择字体:</label>
+        <select id="font-select">
+            <option value="8x8">8x8</option>
+            <option value="8x16">8x16</option>
+            <option value="10x18">10x18</option>
+        </select>
+        
+        <label for="color-picker">文本颜色:</label>
+        <input type="color" id="color-picker" value="#000000">
+        
+        <label for="bg-color-picker">背景颜色:</label>
+        <input type="color" id="bg-color-picker" value="#ffffff">
+        
+        <label for="pixel-size">像素大小:</label>
+        <input type="number" id="pixel-size" min="1" max="10" value="2">
+        
+        <button id="render-btn">渲染</button>
+    </div>
+    
+    <div class="canvas-container">
+        <canvas id="lcd-canvas" width="800" height="200"></canvas>
+    </div>
+    
+    <!-- 引入字体数据 -->
+    <script src="fonts.js"></script>
+    <script src="fonts/font_8x8.js"></script>
+    <script src="fonts/font_8x16.js"></script>
+    <script src="fonts/font_10x18.js"></script>
+    
+    <script>
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            const canvas = document.getElementById('lcd-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // 获取控件元素
+            const textInput = document.getElementById('text-input');
+            const fontSelect = document.getElementById('font-select');
+            const colorPicker = document.getElementById('color-picker');
+            const bgColorPicker = document.getElementById('bg-color-picker');
+            const pixelSizeInput = document.getElementById('pixel-size');
+            const renderBtn = document.getElementById('render-btn');
+            
+            // 渲染函数
+            function renderText() {
+                // 清除画布
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // 获取用户选择的值
+                const text = textInput.value;
+                const fontType = fontSelect.value;
+                const color = colorPicker.value;
+                const bgColor = bgColorPicker.value;
+                const pixelSize = parseInt(pixelSizeInput.value, 10);
+                
+                // 选择字体数据
+                let fontData;
+                switch(fontType) {
+                    case '8x8':
+                        fontData = font_8x8;
+                        break;
+                    case '8x16':
+                        fontData = font_8x16;
+                        break;
+                    case '10x18':
+                        fontData = font_10x18;
+                        break;
+                    default:
+                        fontData = font_8x8;
+                }
+                
+                // 创建一个修改过的字体数据对象，添加自定义像素大小
+                const fontDataWithSize = {...fontData};
+                
+                // 设置起始位置
+                const x = 20;
+                const y = 20;
+                
+                // 使用自定义的像素大小渲染字符
+                const renderWithCustomSize = function(ctx, fontData, char, x, y, color, bgColor) {
+                    const code = char.charCodeAt(0);
+                    const index = LCDFont.getCharIndex(fontData, char);
+                    
+                    // 获取字符数据
+                    const charData = fontData.data.slice(index, index + fontData.bytesPerChar);
+                    
+                    // 绘制字符
+                    for (let row = 0; row < fontData.height; row++) {
+                        let rowData;
+                        
+                        if (fontData.width <= 8) {
+                            // 8位宽度的字体 (8x8, 8x16)
+                            rowData = charData[row];
+                            for (let col = 0; col < fontData.width; col++) {
+                                const bit = (rowData >> (7 - col)) & 0x01;
+                                if (bit || bgColor !== null) {
+                                    ctx.fillStyle = bit ? color : bgColor;
+                                    ctx.fillRect(x + col * pixelSize, y + row * pixelSize, pixelSize, pixelSize);
+                                }
+                            }
+                        } else if (fontData.width === 10) {
+                            // 10位宽度的字体 (10x18)，每行使用两个字节
+                            const byteIndex = row * 2;
+                            // 第一个字节的所有8位 + 第二个字节的高2位
+                            const byte1 = charData[byteIndex];
+                            const byte2 = charData[byteIndex + 1];
+                            
+                            // 从两个字节中提取10位数据
+                            for (let col = 0; col < 8; col++) {
+                                // 从第一个字节提取8位
+                                const bit = (byte1 >> (7 - col)) & 0x01;
+                                if (bit || bgColor !== null) {
+                                    ctx.fillStyle = bit ? color : bgColor;
+                                    ctx.fillRect(x + col * pixelSize, y + row * pixelSize, pixelSize, pixelSize);
+                                }
+                            }
+                            
+                            // 从第二个字节提取剩余2位
+                            for (let col = 0; col < 2; col++) {
+                                const bit = (byte2 >> (7 - col)) & 0x01;
+                                if (bit || bgColor !== null) {
+                                    ctx.fillStyle = bit ? color : bgColor;
+                                    ctx.fillRect(x + (8 + col) * pixelSize, y + row * pixelSize, pixelSize, pixelSize);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 返回下一个字符的x位置
+                    return x + fontData.width * pixelSize;
+                };
+                
+                // 渲染文本
+                let currentX = x;
+                for (let i = 0; i < text.length; i++) {
+                    currentX = renderWithCustomSize(ctx, fontData, text[i], currentX, y, color, bgColor);
+                    currentX += pixelSize; // 字符间距
+                }
+            }
+            
+            // 添加渲染按钮点击事件
+            renderBtn.addEventListener('click', renderText);
+            
+            // 初始渲染
+            renderText();
+        });
+    </script>
+</body>
+</html> 
