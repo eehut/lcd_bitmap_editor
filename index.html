@@ -158,6 +158,9 @@
         <div class="input-group">
             <label>文本:</label>
             <input type="text" id="asciiText" placeholder="输入ASCII字符" style="width: 150px;">
+            <label style="margin-left: 10px;">
+                <input type="checkbox" id="invertText"> 反显
+            </label>
             <button onclick="drawText()">放置文本</button>
         </div>
     </div>
@@ -181,6 +184,7 @@
                 <h3>编辑工具</h3>
                 <button onclick="clearCanvas()">清屏</button>
                 <button onclick="undo()" id="undoBtn" disabled>撤销</button>
+                <button onclick="exportBitmap()">导出字模</button>
             </div>
             
             <div class="control-section">
@@ -202,6 +206,18 @@
         <div class="editor-container">
             <div class="canvas-container">
                 <canvas id="bitmapCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加导出模态框 -->
+    <div id="exportModal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+        <div style="background-color: white; margin: 10% auto; padding: 20px; width: 80%; max-width: 700px; max-height: 80%; overflow: auto; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
+            <h2>C语言字模数据</h2>
+            <pre id="exportData" style="background-color: #f5f5f5; padding: 10px; white-space: pre-wrap; overflow-x: auto; font-family: monospace; border: 1px solid #ccc;"></pre>
+            <div style="display: flex; justify-content: space-between; margin-top: 20px;">
+                <button onclick="document.getElementById('exportModal').style.display='none'">关闭</button>
+                <button onclick="copyToClipboard()">复制到剪贴板</button>
             </div>
         </div>
     </div>
@@ -528,8 +544,9 @@
             const startX = parseInt(document.getElementById('textX').value);
             const startY = parseInt(document.getElementById('textY').value);
             const text = document.getElementById('asciiText').value;
+            const invert = document.getElementById('invertText').checked; // 获取反显设置
             
-            console.log("渲染文本:", text, "字体:", fontType, "位置:", startX, startY);
+            console.log("渲染文本:", text, "字体:", fontType, "位置:", startX, startY, "反显:", invert);
             
             // 获取选择的字体对象
             let fontData;
@@ -574,11 +591,18 @@
             
             console.log("读取到的图像数据大小:", imageData.width, "x", imageData.height);
             
-            // 记录前几个像素的颜色值进行调试
-            console.log("前10个像素值示例:");
-            for (let i = 0; i < 10; i++) {
-                const idx = i * 4;
-                console.log(`像素${i}: R=${data[idx]}, G=${data[idx+1]}, B=${data[idx+2]}, A=${data[idx+3]}`);
+            // 如果是反显模式，先将整个文本区域填充为黑色
+            if (invert) {
+                for (let y = 0; y < tempCanvas.height; y++) {
+                    for (let x = 0; x < tempCanvas.width; x++) {
+                        const bitmapX = startX + x;
+                        const bitmapY = startY + y;
+                        // 确保坐标在bitmap范围内
+                        if (bitmapX >= 0 && bitmapX < bitmap[0].length && bitmapY >= 0 && bitmapY < bitmap.length) {
+                            bitmap[bitmapY][bitmapX] = 1; // 先全部设为黑色
+                        }
+                    }
+                }
             }
             
             // 计数设置了多少像素
@@ -589,22 +613,32 @@
                 for (let x = 0; x < tempCanvas.width; x++) {
                     // 计算在imageData中的索引（每个像素4个值：r,g,b,a）
                     const dataIndex = (y * tempCanvas.width + x) * 4;
-                    // 检查像素是否有颜色 - 使用更适合黑色的判断条件
+                    // 检查像素是否有颜色
                     const r = data[dataIndex];
                     const g = data[dataIndex + 1];
                     const b = data[dataIndex + 2];
                     const a = data[dataIndex + 3];
                     
-                    // 判断是否为黑色像素 - 使用和测试函数相同的逻辑
+                    // 判断是否为黑色像素
                     const isBlack = a > 0 && (r < 100 && g < 100 && b < 100);
                     
-                    if (isBlack) {
-                        const bitmapX = startX + x;
-                        const bitmapY = startY + y;
-                        // 确保坐标在bitmap范围内
-                        if (bitmapX >= 0 && bitmapX < bitmap[0].length && bitmapY >= 0 && bitmapY < bitmap.length) {
-                            bitmap[bitmapY][bitmapX] = 1;
-                            pixelCount++;
+                    const bitmapX = startX + x;
+                    const bitmapY = startY + y;
+                    
+                    // 确保坐标在bitmap范围内
+                    if (bitmapX >= 0 && bitmapX < bitmap[0].length && bitmapY >= 0 && bitmapY < bitmap.length) {
+                        if (invert) {
+                            // 反显模式: 文字像素设为白色(0)，背景已经设为黑色(1)
+                            if (isBlack) {
+                                bitmap[bitmapY][bitmapX] = 0;
+                                pixelCount++;
+                            }
+                        } else {
+                            // 正常模式: 文字像素设为黑色(1)
+                            if (isBlack) {
+                                bitmap[bitmapY][bitmapX] = 1;
+                                pixelCount++;
+                            }
                         }
                     }
                 }
@@ -616,6 +650,69 @@
             drawBitmap();
         }
 
+        // 导出位图为C语言字模函数
+        function exportBitmap() {
+            const width = bitmap[0].length;
+            const height = bitmap.length;
+            
+            // 计算每行需要的字节数，向上取整
+            const bytesPerRow = Math.ceil(width / 8);
+            const totalBytes = bytesPerRow * height;
+            
+            // 创建结果数组
+            const bytes = new Array(totalBytes).fill(0);
+            
+            // 每行按MSB优先编码
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    if (bitmap[y][x]) {
+                        // 计算在bytes数组中的索引
+                        const byteIndex = y * bytesPerRow + Math.floor(x / 8);
+                        // 在当前字节中的位位置（MSB优先，0是最高位，7是最低位）
+                        const bitPosition = 7 - (x % 8);
+                        // 设置对应的位
+                        bytes[byteIndex] |= (1 << bitPosition);
+                    }
+                }
+            }
+            
+            // 将字节数组转换为十六进制的C语言数组格式
+            let codeOutput = `// ${width}x${height} 位图字模数据\n`;
+            codeOutput += `// 总字节数: ${totalBytes}，每行字节数: ${bytesPerRow}\n`;
+            codeOutput += `const unsigned char bitmap_${width}x${height}[] = {\n    `;
+            
+            for (let i = 0; i < bytes.length; i++) {
+                codeOutput += `0x${bytes[i].toString(16).padStart(2, '0')}`;
+                
+                if (i < bytes.length - 1) {
+                    codeOutput += ', ';
+                    // 每8个字节换一行，使输出更整洁
+                    if ((i + 1) % 8 === 0) {
+                        codeOutput += '\n    ';
+                    }
+                }
+            }
+            
+            codeOutput += '\n};';
+            
+            // 显示导出结果
+            document.getElementById('exportData').textContent = codeOutput;
+            document.getElementById('exportModal').style.display = 'block';
+        }
+        
+        // 复制到剪贴板
+        function copyToClipboard() {
+            const exportText = document.getElementById('exportData').textContent;
+            navigator.clipboard.writeText(exportText)
+                .then(() => {
+                    alert('已复制到剪贴板');
+                })
+                .catch(err => {
+                    console.error('复制失败:', err);
+                    alert('复制失败，请手动复制');
+                });
+        }
+        
         // 初始化画布
         updateCanvas();
         
