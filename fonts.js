@@ -11,15 +11,12 @@ const LCDFont = {
   },
 
   // 渲染字符到canvas上下文
-  renderChar: function(ctx, fontData, char, x, y, color = '#000000', bgColor = null) {
+  renderChar: function(ctx, fontData, char, x, y, color = '#000000', bgColor = null, pixelSize = 1) {
     const code = char.charCodeAt(0);
     const index = this.getCharIndex(fontData, char);
     
     // 获取字符数据
     const charData = fontData.data.slice(index, index + fontData.bytesPerChar);
-    
-    // 设置像素大小
-    const pixelSize = 1;
     
     // 计算每行需要的字节数（向上取整）
     const bytesPerRow = Math.ceil(fontData.width / 8);
@@ -53,11 +50,11 @@ const LCDFont = {
   },
 
   // 渲染文本到canvas上下文
-  renderText: function(ctx, fontData, text, x, y, color = '#000000', bgColor = null, spacing = 0) {
+  renderText: function(ctx, fontData, text, x, y, color = '#000000', bgColor = null, spacing = 0, pixelSize = 1) {
     let currentX = x;
     
     for (let i = 0; i < text.length; i++) {
-      currentX = this.renderChar(ctx, fontData, text[i], currentX, y, color, bgColor);
+      currentX = this.renderChar(ctx, fontData, text[i], currentX, y, color, bgColor, pixelSize);
       currentX += spacing; // 字符间距
     }
     

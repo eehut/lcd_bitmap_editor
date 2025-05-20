@@ -5,37 +5,108 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LCD 单色液晶显示位图编辑器</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
+            font-family: Arial, sans-serif;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            font-family: Arial, sans-serif;
+            height: 100vh;
+            overflow: hidden;
             background-color: #f0f0f0;
         }
-        .controls {
-            margin: 20px;
+        .header {
+            display: flex;
             padding: 10px;
-            background-color: white;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            background-color: #333;
+            color: white;
+            align-items: center;
+            height: 60px;
+        }
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        .left-panel {
+            width: 250px;
+            background-color: #fff;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            padding: 10px;
+            overflow-y: auto;
+        }
+        .editor-container {
+            flex: 1;
+            position: relative;
+            overflow: auto;
+            padding: 15px;
         }
         .canvas-container {
-            background-color: white;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            position: absolute;
+            top: 15px;
+            left: 15px;
         }
         canvas {
             border: 1px solid #ccc;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .top-panel {
+            background-color: #fff;
+            border-bottom: 1px solid #ddd;
+            padding: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h1 {
+            margin-right: 20px;
+            font-size: 1.2rem;
+            white-space: nowrap;
+        }
+        .input-group {
+            display: flex;
+            align-items: center;
+            margin-right: 15px;
+            white-space: nowrap;
         }
         button {
             margin: 5px;
             padding: 5px 10px;
             cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
         }
         input[type="number"] {
             width: 60px;
-            margin: 0 5px;
+            padding: 5px;
+            margin-left: 5px;
+        }
+        input[type="text"] {
+            padding: 5px;
+            margin-left: 5px;
+        }
+        .control-section {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .control-section h3 {
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: #333;
         }
         .slider-container {
             display: flex;
@@ -43,29 +114,19 @@
             margin: 10px 0;
         }
         input[type="range"] {
-            width: 200px;
+            flex: 1;
             margin: 0 10px;
         }
         .slider-value {
-            width: 40px;
+            width: 30px;
             text-align: center;
         }
         .checkbox-container {
             margin: 10px 0;
         }
-        .text-input-container {
-            margin: 10px 0;
-            padding: 10px;
-            border-top: 1px solid #ddd;
-        }
-        .font-select {
+        select {
             margin: 5px;
             padding: 5px;
-        }
-        textarea {
-            width: 100%;
-            height: 60px;
-            margin-top: 5px;
         }
     </style>
     <!-- 引入字体库和字体文件 -->
@@ -75,55 +136,80 @@
     <script src="fonts/font_10x18.js"></script>
 </head>
 <body>
-    <h1>LCD 单色液晶显示位图编辑器</h1>
-    <div class="controls">
-        <label>
-            宽度: <input type="number" id="width" value="128" min="1" max="256">
-        </label>
-        <label>
-            高度: <input type="number" id="height" value="64" min="1" max="256">
-        </label>
-        <button onclick="updateCanvas()">更新尺寸</button>
-        <button onclick="clearCanvas()">清屏</button>
-        <button onclick="undo()" id="undoBtn" disabled>撤销</button>
-        <div class="slider-container">
-            <label>缩放:</label>
-            <input type="range" id="scale" min="1" max="20" value="8" oninput="updateScaleValue(this.value)">
-            <span class="slider-value" id="scaleValue">8</span>
+    <div class="header">
+        <h1>LCD 单色液晶显示位图编辑器</h1>
+    </div>
+    
+    <div class="top-panel">
+        <div class="input-group">
+            <label>字体:</label>
+            <select id="fontSelect" class="font-select">
+                <option value="font_8x8">8x8 字体</option>
+                <option value="font_8x16">8x16 字体</option>
+                <option value="font_10x18">10x18 字体</option>
+            </select>
         </div>
-        <div class="checkbox-container">
-            <label>
-                <input type="checkbox" id="showGrid" checked onchange="drawBitmap()">
-                显示网格
-            </label>
+        <div class="input-group">
+            <label>X:</label>
+            <input type="number" id="textX" value="0" min="0" max="255" style="width: 50px;">
+            <label>Y:</label>
+            <input type="number" id="textY" value="0" min="0" max="255" style="width: 50px;">
         </div>
-        
-        <div class="text-input-container">
-            <h3>放置ASCII字符</h3>
-            <div>
-                <label>字体:</label>
-                <select id="fontSelect" class="font-select">
-                    <option value="font_8x8">8x8 字体</option>
-                    <option value="font_8x16">8x16 字体</option>
-                    <option value="font_10x18">10x18 字体</option>
-                </select>
-            </div>
-            <div>
-                <label>起始坐标: X:<input type="number" id="textX" value="0" min="0" max="255"></label>
-                <label>Y:<input type="number" id="textY" value="0" min="0" max="255"></label>
-            </div>
-            <div>
-                <label>输入文本:</label>
-                <input type="text" id="asciiText" placeholder="输入ASCII字符">
-                <button onclick="drawText()">放置文本</button>
-            </div>
+        <div class="input-group">
+            <label>文本:</label>
+            <input type="text" id="asciiText" placeholder="输入ASCII字符" style="width: 150px;">
+            <button onclick="drawText()">放置文本</button>
         </div>
     </div>
-    <div class="canvas-container">
-        <canvas id="bitmapCanvas"></canvas>
+    
+    <div class="main-content">
+        <div class="left-panel">
+            <div class="control-section">
+                <h3>屏幕尺寸</h3>
+                <div class="input-group">
+                    <label>宽度:</label>
+                    <input type="number" id="width" value="128" min="1" max="256">
+                </div>
+                <div class="input-group">
+                    <label>高度:</label>
+                    <input type="number" id="height" value="64" min="1" max="256">
+                </div>
+                <button onclick="updateCanvas()">更新尺寸</button>
+            </div>
+            
+            <div class="control-section">
+                <h3>编辑工具</h3>
+                <button onclick="clearCanvas()">清屏</button>
+                <button onclick="undo()" id="undoBtn" disabled>撤销</button>
+            </div>
+            
+            <div class="control-section">
+                <h3>显示设置</h3>
+                <div class="slider-container">
+                    <label>缩放:</label>
+                    <input type="range" id="scale" min="1" max="20" value="8" oninput="updateScaleValue(this.value)">
+                    <span class="slider-value" id="scaleValue">8</span>
+                </div>
+                <div class="checkbox-container">
+                    <label>
+                        <input type="checkbox" id="showGrid" checked onchange="drawBitmap()">
+                        显示网格
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <div class="editor-container">
+            <div class="canvas-container">
+                <canvas id="bitmapCanvas"></canvas>
+            </div>
+        </div>
     </div>
 
     <script>
+        // 检查LCDFont是否正确导入
+        console.log("LCDFont对象:", typeof LCDFont, LCDFont ? Object.keys(LCDFont) : "未定义");
+        
         let canvas = document.getElementById('bitmapCanvas');
         let ctx = canvas.getContext('2d');
         let bitmap = [];
@@ -231,7 +317,16 @@
         function updateScaleValue(value) {
             document.getElementById('scaleValue').textContent = value;
             scale = parseInt(value);
-            updateCanvas();
+            
+            // 保存当前屏幕的尺寸
+            const width = bitmap[0].length;
+            const height = bitmap.length;
+            
+            // 更新画布尺寸，保持左上角原点位置不变
+            canvas.width = width * scale + MARGIN_LEFT + MARGIN_RIGHT;
+            canvas.height = height * scale + MARGIN_TOP + MARGIN_BOTTOM;
+            
+            drawBitmap();
         }
 
         function drawGrid() {
@@ -389,8 +484,10 @@
                 lastX = coords.x;
                 lastY = coords.y;
                 // 根据当前像素状态决定绘制模式
-                drawMode = bitmap[coords.y][coords.x] ? 0 : 1;
-                togglePixel(coords.x, coords.y);
+                if (lastX >= 0 && lastX < bitmap[0].length && lastY >= 0 && lastY < bitmap.length) {
+                    drawMode = bitmap[lastY][lastX] ? 0 : 1;
+                    togglePixel(lastX, lastY);
+                }
             }
         });
 
@@ -398,9 +495,12 @@
             if (isDrawing) {
                 const coords = getCanvasCoordinates(e);
                 if (coords.x !== lastX || coords.y !== lastY) {
-                    drawLine(lastX, lastY, coords.x, coords.y);
-                    lastX = coords.x;
-                    lastY = coords.y;
+                    if (lastX >= 0 && lastX < bitmap[0].length && lastY >= 0 && lastY < bitmap.length &&
+                        coords.x >= 0 && coords.x < bitmap[0].length && coords.y >= 0 && coords.y < bitmap.length) {
+                        drawLine(lastX, lastY, coords.x, coords.y);
+                        lastX = coords.x;
+                        lastY = coords.y;
+                    }
                 }
             }
         });
@@ -429,13 +529,31 @@
             const startY = parseInt(document.getElementById('textY').value);
             const text = document.getElementById('asciiText').value;
             
+            console.log("渲染文本:", text, "字体:", fontType, "位置:", startX, startY);
+            
             // 获取选择的字体对象
-            const fontData = LCDFont[fontType];
+            let fontData;
+            switch(fontType) {
+                case 'font_8x8':
+                    fontData = font_8x8;
+                    break;
+                case 'font_8x16':
+                    fontData = font_8x16;
+                    break;
+                case 'font_10x18':
+                    fontData = font_10x18;
+                    break;
+                default:
+                    console.error("未找到字体数据:", fontType);
+                    return;
+            }
             
             if (!fontData) {
                 console.error("未找到字体数据:", fontType);
                 return;
             }
+            
+            console.log("字体数据:", fontData.width, "x", fontData.height, "bytesPerChar:", fontData.bytesPerChar);
             
             // 创建一个临时canvas用于渲染文字
             const tempCanvas = document.createElement('canvas');
@@ -445,32 +563,54 @@
             tempCanvas.width = fontData.width * text.length;
             tempCanvas.height = fontData.height;
             
+            console.log("临时Canvas尺寸:", tempCanvas.width, "x", tempCanvas.height);
+            
             // 使用LCDFont库渲染文本到临时canvas
-            let curX = 0;
-            for (let i = 0; i < text.length; i++) {
-                curX = LCDFont.renderChar(tempCtx, fontData, text[i], curX, 0);
-            }
+            LCDFont.renderText(tempCtx, fontData, text, 0, 0, '#000000', null, 0, 1);
             
             // 从临时canvas读取像素数据并转移到bitmap
             const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
             const data = imageData.data;
+            
+            console.log("读取到的图像数据大小:", imageData.width, "x", imageData.height);
+            
+            // 记录前几个像素的颜色值进行调试
+            console.log("前10个像素值示例:");
+            for (let i = 0; i < 10; i++) {
+                const idx = i * 4;
+                console.log(`像素${i}: R=${data[idx]}, G=${data[idx+1]}, B=${data[idx+2]}, A=${data[idx+3]}`);
+            }
+            
+            // 计数设置了多少像素
+            let pixelCount = 0;
             
             // 遍历像素数据并设置bitmap
             for (let y = 0; y < tempCanvas.height; y++) {
                 for (let x = 0; x < tempCanvas.width; x++) {
                     // 计算在imageData中的索引（每个像素4个值：r,g,b,a）
                     const dataIndex = (y * tempCanvas.width + x) * 4;
-                    // 如果像素不是透明的（有颜色），则设置bitmap对应位置为1
-                    if (data[dataIndex] > 0 || data[dataIndex + 1] > 0 || data[dataIndex + 2] > 0) {
+                    // 检查像素是否有颜色 - 使用更适合黑色的判断条件
+                    const r = data[dataIndex];
+                    const g = data[dataIndex + 1];
+                    const b = data[dataIndex + 2];
+                    const a = data[dataIndex + 3];
+                    
+                    // 判断是否为黑色像素 - 使用和测试函数相同的逻辑
+                    const isBlack = a > 0 && (r < 100 && g < 100 && b < 100);
+                    
+                    if (isBlack) {
                         const bitmapX = startX + x;
                         const bitmapY = startY + y;
                         // 确保坐标在bitmap范围内
                         if (bitmapX >= 0 && bitmapX < bitmap[0].length && bitmapY >= 0 && bitmapY < bitmap.length) {
                             bitmap[bitmapY][bitmapX] = 1;
+                            pixelCount++;
                         }
                     }
                 }
             }
+            
+            console.log("设置了", pixelCount, "个像素");
             
             // 重绘画布
             drawBitmap();
@@ -478,6 +618,82 @@
 
         // 初始化画布
         updateCanvas();
+        
+        // 测试LCDFont是否工作正常
+        function testLCDFont() {
+            try {
+                // 在控制台显示方法
+                console.log("LCDFont方法:", LCDFont.renderChar, LCDFont.renderText);
+                
+                // 创建一个测试canvas
+                const testCanvas = document.createElement('canvas');
+                testCanvas.width = 200;
+                testCanvas.height = 50;
+                testCanvas.style.border = '1px solid black';
+                testCanvas.style.margin = '10px';
+                document.body.appendChild(testCanvas);
+                
+                const testCtx = testCanvas.getContext('2d');
+                testCtx.fillStyle = '#e0e0e0';
+                testCtx.fillRect(0, 0, testCanvas.width, testCanvas.height);
+                
+                // 测试渲染
+                const testText = "A";
+                LCDFont.renderText(testCtx, font_8x8, testText, 10, 10, '#000000', null, 1, 2);
+                
+                // 获取像素数据并检查
+                const imgData = testCtx.getImageData(0, 0, testCanvas.width, testCanvas.height);
+                const pixels = imgData.data;
+                
+                // 添加一个用于显示调试信息的div
+                const debugDiv = document.createElement('div');
+                debugDiv.style.fontFamily = 'monospace';
+                debugDiv.style.fontSize = '12px';
+                debugDiv.style.whiteSpace = 'pre';
+                debugDiv.style.margin = '10px';
+                debugDiv.style.padding = '10px';
+                debugDiv.style.border = '1px solid #ccc';
+                debugDiv.style.backgroundColor = '#f0f0f0';
+                document.body.appendChild(debugDiv);
+                
+                debugDiv.textContent = "字符 'A' 像素检查 (8x8像素区域):\n";
+                
+                // 创建ASCII图示,显示字符的每个像素
+                let asciiMap = "";
+                let blackCount = 0;
+                
+                for (let y = 10; y < 18; y++) {
+                    for (let x = 10; x < 18; x++) {
+                        const idx = (y * testCanvas.width + x) * 4;
+                        const r = pixels[idx];
+                        const g = pixels[idx+1];
+                        const b = pixels[idx+2];
+                        const a = pixels[idx+3];
+                        
+                        // 判断是否为黑色像素
+                        const isBlack = a > 0 && (r < 100 && g < 100 && b < 100);
+                        
+                        if (isBlack) {
+                            asciiMap += "█";
+                            blackCount++;
+                        } else {
+                            asciiMap += "·";
+                        }
+                    }
+                    asciiMap += "\n";
+                }
+                
+                debugDiv.textContent += asciiMap;
+                debugDiv.textContent += `\n检测到 ${blackCount} 个黑色像素`;
+                
+                console.log("LCDFont测试完成");
+            } catch (error) {
+                console.error("LCDFont测试失败:", error);
+            }
+        }
+        
+        // 页面加载完成后执行测试
+        // window.addEventListener('load', testLCDFont);  // 注释掉防止调试信息影响界面
     </script>
 </body>
 </html> 
