@@ -1,10 +1,8 @@
-
-
 // 这里添加8x16和10x18字体数据的定义
 const font_8x16 = {
     width: 8,
     height: 16,
-    bytesPerChar: 16,
+    bytesPerChar: 16,  // 每个字符占用16字节（8x16点阵，每行1字节）
     data: [
 
 	/* 0 0x00 '^@' */
@@ -2313,4 +2311,5 @@ const font_8x16 = {
     ]
   };
 
+// 导出字体数据到全局作用域
 window.font_8x16 = font_8x16;

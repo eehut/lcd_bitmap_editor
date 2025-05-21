@@ -1,10 +1,8 @@
-
-
 // 8x8 字体数据
 const font_8x8 = {
     width: 8,
     height: 8,
-    bytesPerChar: 8,
+    bytesPerChar: 8,  // 每个字符占用8字节（8x8点阵，每行1字节）
     data: [
       // 0 0x00 '^@'
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -392,4 +390,5 @@ const font_8x8 = {
     ]
   };
 
+// 导出字体数据到全局作用域
 window.font_8x8 = font_8x8;

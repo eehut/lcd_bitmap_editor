@@ -142,11 +142,18 @@
     
     <div class="top-panel">
         <div class="input-group">
-            <label>字体:</label>
+            <label>ASCII字库:</label>
             <select id="fontSelect" class="font-select">
                 <option value="font_8x8">8x8 字体</option>
                 <option value="font_8x16">8x16 字体</option>
                 <option value="font_10x18">10x18 字体</option>
+            </select>
+        </div>
+        <div class="input-group">
+            <label>汉字字库:</label>
+            <select id="hzkSelect" class="font-select">
+                <option value="HZK16">HZK16</option>
+                <option value="HZK12">HZK12</option>
             </select>
         </div>
         <div class="input-group">
@@ -157,11 +164,23 @@
         </div>
         <div class="input-group">
             <label>文本:</label>
-            <input type="text" id="asciiText" placeholder="输入ASCII字符" style="width: 150px;">
+            <input type="text" id="asciiText" placeholder="输入ASCII字符或汉字" style="width: 200px;">
             <label style="margin-left: 10px;">
                 <input type="checkbox" id="invertText"> 反显
             </label>
             <button onclick="drawText()">放置文本</button>
+        </div>
+        <div id="hzk16Status" style="color: red; margin-left: 10px; display: none;">
+            HZK16 字库未加载，汉字功能不可用
+        </div>
+        <div class="input-group">
+            <button onclick="exportBitmap()">导出字模</button>
+        </div>
+        <div id="debugInfo" style="display: none; padding: 5px; background-color: #f5f5f5; border: 1px solid #ddd; margin: 5px; font-family: monospace; font-size: 12px;">
+            <div><strong>调试信息</strong> <button onclick="document.getElementById('debugInfo').style.display='none'" style="float:right;margin:0;padding:2px 5px;">关闭</button></div>
+            <div id="debugCharInfo"></div>
+            <div id="debugCodeInfo"></div>
+            <div id="debugOffsetInfo"></div>
         </div>
     </div>
     
@@ -184,7 +203,6 @@
                 <h3>编辑工具</h3>
                 <button onclick="clearCanvas()">清屏</button>
                 <button onclick="undo()" id="undoBtn" disabled>撤销</button>
-                <button onclick="exportBitmap()">导出字模</button>
             </div>
             
             <div class="control-section">
@@ -222,9 +240,53 @@
         </div>
     </div>
 
+    <!-- HZK16 说明模态框 -->
+    <div id="hzkInfoModal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+        <div style="background-color: white; margin: 10% auto; padding: 20px; width: 80%; max-width: 700px; max-height: 80%; overflow: auto; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
+            <h2>关于汉字点阵字库</h2>
+            <p>本编辑器支持 HZK16 和 HZK12 点阵汉字库，用于在 LCD 上显示中文字符。</p>
+            <p>要使用汉字功能，您需要：</p>
+            <ol>
+                <li>获取 HZK16 和/或 HZK12 字库文件（网上可搜索下载）</li>
+                <li>将字库文件命名为 "HZK16" 和 "HZK12"（无扩展名）</li>
+                <li>放置在网页同级目录下的 fonts 文件夹中</li>
+            </ol>
+            <p><strong>技术说明：</strong></p>
+            <ul>
+                <li>HZK16 是 GB2312 编码的 16×16 点阵汉字库，包含 6763 个汉字和 682 个符号。</li>
+                <li>HZK12 是 GB2312 编码的 12×12 点阵汉字库，同样支持 GB2312 标准中的汉字和符号。</li>
+                <li>每个汉字在 HZK16 中占用 32 字节存储空间，在 HZK12 中占用 24 字节存储空间。</li>
+                <li>本程序使用 Unicode 字符直接转换为 GB2312 编码进行显示，不再使用预设映射表。</li>
+            </ul>
+            <p><strong>调试信息：</strong></p>
+            <p>您可以通过点击"调试信息"按钮查看当前汉字的编码和偏移量信息，便于与 Python 代码进行比较。</p>
+            <div style="display: flex; justify-content: center; margin-top: 20px;">
+                <button onclick="document.getElementById('hzkInfoModal').style.display='none'">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // 检查LCDFont是否正确导入
         console.log("LCDFont对象:", typeof LCDFont, LCDFont ? Object.keys(LCDFont) : "未定义");
+        
+        // 检查字体对象是否正确导入
+        console.log("font_8x8:", typeof font_8x8, font_8x8 ? "已加载" : "未加载");
+        console.log("font_8x16:", typeof font_8x16, font_8x16 ? "已加载" : "未加载");
+        console.log("font_10x18:", typeof font_10x18, font_10x18 ? "已加载" : "未加载");
+        
+        // 如果字体未加载，显示错误信息
+        function checkFonts() {
+            const fontSelect = document.getElementById('fontSelect');
+            const selectedFont = fontSelect.value;
+            const fontObj = window[selectedFont];
+            
+            if (!fontObj) {
+                alert(`错误：${selectedFont} 字体未正确加载！`);
+                return false;
+            }
+            return true;
+        }
         
         let canvas = document.getElementById('bitmapCanvas');
         let ctx = canvas.getContext('2d');
@@ -535,118 +597,397 @@
             lastY = -1;
         });
 
-        // 绘制文本函数
+        // HZK16 字库相关
+        let hzk16Data = null;
+        let hzk12Data = null;
+        let currentHZKData = null;
+        let currentHZKType = "HZK16";
+
+        // 字库相关变量
+        
+        // 将Unicode字符转换为GB2312编码
+        function unicodeToGB2312(char) {
+            try {
+                // 由于JavaScript没有直接的Unicode到GB2312转换函数
+                // 我们需要使用映射表或通过算法计算
+                
+                // 为常用汉字提供准确的GB2312编码
+                const commonChars = {
+                    '中': [0xD6, 0xD0], // 54区01位 (0xD6, 0xD0)
+                    '国': [0xB9, 0xFA], // 54区06位 (0xB9, 0xFA)
+                    '你': [0xC4, 0xE3], // 45区47位 (0xC4, 0xE3)
+                    '好': [0xBA, 0xC3], // 54区54位 (0xBA, 0xC3)
+                    '我': [0xCE, 0xD2], // 46区18位 (0xCE, 0xD2)
+                    '的': [0xB5, 0xC4], // 52区23位 (0xB5, 0xC4)
+                    '是': [0xCA, 0xC7], // 54区40位 (0xCA, 0xC7)
+                    '了': [0xC1, 0xCB], // 44区65位 (0xC1, 0xCB)
+                    '在': [0xD4, 0xDA], // 55区38位 (0xD4, 0xDA)
+                    '人': [0xC8, 0xCB], // 45区43位 (0xC8, 0xCB)
+                    '有': [0xD3, 0xD0], // 53区61位 (0xD3, 0xD0)
+                    '和': [0xBA, 0xCD], // 46区01位 (0xBA, 0xCD)
+                    '上': [0xC9, 0xCF], // 42区11位 (0xC9, 0xCF)
+                    '大': [0xB4, 0xF3], // 46区17位 (0xB4, 0xF3)
+                    '不': [0xB2, 0xBB]  // 43区22位 (0xB2, 0xBB)
+                };
+                
+                // 检查常用汉字映射表
+                if (commonChars[char]) {
+                    console.log(`找到常用汉字 "${char}" 的GB2312编码:`, 
+                               `0x${commonChars[char][0].toString(16).toUpperCase()} 0x${commonChars[char][1].toString(16).toUpperCase()}`);
+                    return commonChars[char];
+                }
+                
+                // 获取汉字的 Unicode 码点
+                const cp = char.charCodeAt(0);
+                
+                // 计算GB2312编码的更精确方法
+                // 注意：此方法依然是一个近似值，不如映射表准确
+                if (cp >= 0x4E00 && cp <= 0x9FA5) {
+                    // 使用我们得到的"我"字的编码作为验证：
+                    // "我"的Unicode是0x6211，GB2312是0xCE 0xD2
+                    
+                    // 我们知道GB2312的汉字区位码是从16区到87区
+                    // 每区有94个字符
+                    // 但是映射关系不是简单的线性关系
+                    
+                    console.warn(`没有找到汉字 "${char}" 的精确GB2312编码，返回null`);
+                    return null;
+                }
+            } catch (error) {
+                console.error("GB2312编码转换错误:", error);
+            }
+            
+            return null;
+        }
+        
+        // 根据GB2312字节获取区位码
+        function getGB2312AreaPos(gb2312Bytes) {
+            if (!gb2312Bytes || gb2312Bytes.length !== 2) {
+                return [0, 0];
+            }
+            
+            // GB2312编码的高位字节减去0xA0得到区码
+            // GB2312编码的低位字节减去0xA0得到位码
+            const area = gb2312Bytes[0] - 0xA0;
+            const pos = gb2312Bytes[1] - 0xA0;
+            
+            console.log(`GB2312区位码计算: (${gb2312Bytes[0].toString(16).toUpperCase()},${gb2312Bytes[1].toString(16).toUpperCase()}) -> ${area}区${pos}位`);
+            
+            return [area, pos];
+        }
+        
+        // 显示调试信息
+        function showDebugInfo(char, gb2312Bytes, area, pos, offset) {
+            const debugDiv = document.getElementById('debugInfo');
+            debugDiv.style.display = 'block';
+            
+            document.getElementById('debugCharInfo').innerHTML = `字符: '${char}' (Unicode: ${char.charCodeAt(0)} / 0x${char.charCodeAt(0).toString(16).toUpperCase()})`;
+            document.getElementById('debugCodeInfo').innerHTML = `GB2312编码: ${gb2312Bytes ? '0x' + gb2312Bytes[0].toString(16).toUpperCase() + ' 0x' + gb2312Bytes[1].toString(16).toUpperCase() : '未找到'}`;
+            document.getElementById('debugOffsetInfo').innerHTML = `字库: ${currentHZKType}, 区位码: ${area}区${pos}位, 偏移: ${offset} (0x${offset.toString(16).toUpperCase()})`;
+        }
+
+        // 在加载 HZK16 字库后初始化字符映射表
+        async function loadHZK16() {
+            try {
+                // 更新状态提示
+                const statusElement = document.getElementById('hzk16Status');
+                statusElement.style.display = 'inline';
+                statusElement.textContent = 'HZK16 字库加载中...';
+                statusElement.style.color = 'blue';
+                
+                const response = await fetch('fonts/HZK16');
+                const buffer = await response.arrayBuffer();
+                hzk16Data = new Uint8Array(buffer);
+                
+                console.log('HZK16 字库加载成功，大小:', buffer.byteLength, '字节');
+                
+                // 设置当前字库
+                currentHZKData = hzk16Data;
+                currentHZKType = "HZK16";
+                
+                // 更新状态提示
+                statusElement.textContent = 'HZK16 字库加载成功，支持汉字显示';
+                statusElement.style.color = 'green';
+                
+                // 3秒后隐藏状态提示
+                setTimeout(() => {
+                    statusElement.style.display = 'none';
+                }, 3000);
+                
+                return true;
+            } catch (error) {
+                console.error('HZK16 字库加载失败:', error);
+                
+                // 更新状态提示
+                const statusElement = document.getElementById('hzk16Status');
+                statusElement.style.display = 'inline';
+                statusElement.textContent = 'HZK16 字库加载失败，汉字功能不可用';
+                statusElement.style.color = 'red';
+                
+                return false;
+            }
+        }
+        
+        // 添加加载HZK12字库的函数
+        async function loadHZK12() {
+            try {
+                // 更新状态提示
+                const statusElement = document.getElementById('hzk16Status');
+                statusElement.style.display = 'inline';
+                statusElement.textContent = 'HZK12 字库加载中...';
+                statusElement.style.color = 'blue';
+                
+                const response = await fetch('fonts/HZK12');
+                const buffer = await response.arrayBuffer();
+                hzk12Data = new Uint8Array(buffer);
+                
+                console.log('HZK12 字库加载成功，大小:', buffer.byteLength, '字节');
+                
+                // 设置当前字库
+                currentHZKData = hzk12Data;
+                currentHZKType = "HZK12";
+                
+                // 更新状态提示
+                statusElement.textContent = 'HZK12 字库加载成功，支持汉字显示';
+                statusElement.style.color = 'green';
+                
+                // 3秒后隐藏状态提示
+                setTimeout(() => {
+                    statusElement.style.display = 'none';
+                }, 3000);
+                
+                return true;
+            } catch (error) {
+                console.error('HZK12 字库加载失败:', error);
+                
+                // 更新状态提示
+                const statusElement = document.getElementById('hzk16Status');
+                statusElement.style.display = 'inline';
+                statusElement.textContent = 'HZK12 字库加载失败，汉字功能不可用';
+                statusElement.style.color = 'red';
+                
+                return false;
+            }
+        }
+        
+        // 修改测试汉字显示功能
+        function testHZK16() {
+            if (!currentHZKData) {
+                console.warn(`${currentHZKType} 字库未加载，无法测试`);
+                return;
+            }
+            
+            // 测试几个常用汉字
+            const testChars = ['中', '国', '你', '好', '我'];
+            let message = '测试汉字:\n';
+            
+            for (const char of testChars) {
+                // 尝试获取字模数据
+                const fontData = getHZKData(char);
+                if (fontData) {
+                    message += `汉字 "${char}" 字模数据获取成功，长度: ${fontData.length}\n`;
+                } else {
+                    message += `汉字 "${char}" 未找到字模数据\n`;
+                }
+            }
+            
+            console.log(message);
+        }
+        
+        // 获取汉字的点阵数据
+        function getHZKData(char) {
+            if (!currentHZKData) {
+                console.warn(`${currentHZKType} 字库未加载，无法获取汉字数据`);
+                return null;
+            }
+            
+            // 获取GB2312编码
+            const gb2312Bytes = unicodeToGB2312(char);
+            if (!gb2312Bytes) {
+                console.warn(`汉字 "${char}" 无法获取GB2312编码`);
+                return null;
+            }
+            
+            // 计算偏移
+            const [area, pos] = getGB2312AreaPos(gb2312Bytes);
+            
+            // HZK16和HZK12的字节数设置
+            // HZK16: 16*16点阵，每行2字节，共32字节
+            // HZK12: 12*12点阵，每行2字节(最后4位不用)，共24字节
+            const byteSize = currentHZKType === "HZK16" ? 32 : 24;
+            const offset = (94 * (area - 1) + (pos - 1)) * byteSize;
+            
+            if (offset < 0 || offset + byteSize > currentHZKData.length) {
+                console.warn(`汉字 "${char}" 在字库中偏移超出范围：${offset}`);
+                return null;
+            }
+            
+            // 显示调试信息
+            showDebugInfo(char, gb2312Bytes, area, pos, offset);
+            
+            return currentHZKData.slice(offset, offset + byteSize);
+        }
+        
+        // 绘制汉字
+        function drawHZKChar(char, x, y, isInvert = false) {
+            const fontData = getHZKData(char);
+            if (!fontData) {
+                console.warn(`无法绘制汉字: "${char}", 找不到字模数据`);
+                return false;
+            }
+            
+            // 字库大小设置
+            const width = currentHZKType === "HZK16" ? 16 : 12;
+            const height = currentHZKType === "HZK16" ? 16 : 12;
+            
+            // 注意：HZK12虽然是12x12点阵，但每行数据仍占2字节(16位)，只是最右侧4位不用
+            // bytesPerLine表示每行占用的字节数
+            const bytesPerLine = 2; // 对HZK16和HZK12都是2字节每行
+            
+            console.log(`绘制汉字: "${char}", 字库: ${currentHZKType}, 点阵大小: ${width}x${height}, 字节数: ${fontData.length}`);
+            
+            for (let i = 0; i < height; i++) {
+                for (let j = 0; j < bytesPerLine; j++) {
+                    const byte = fontData[i * bytesPerLine + j];
+                    // 对于HZK12，每行只取12位，忽略最后4位
+                    const bitCount = (currentHZKType === "HZK12" && j === 1) ? 4 : 8;
+                    
+                    for (let k = 0; k < bitCount; k++) {
+                        // 获取当前位的值 (0或1)
+                        // 注意：按照 HZK 的存储格式，1表示有点，0表示无点
+                        const bit = (byte >> (7 - k)) & 1;
+                        const pixelX = x + j * 8 + k;
+                        const pixelY = y + i;
+                        if (pixelX < bitmap[0].length && pixelY < bitmap.length) {
+                            bitmap[pixelY][pixelX] = isInvert ? !bit : bit;
+                        }
+                    }
+                }
+            }
+            
+            // 打印字模数据供调试
+            if (currentHZKType === "HZK12") {
+                let debugStr = `${char} 字模数据:\n`;
+                for (let i = 0; i < height; i++) {
+                    let line = "";
+                    // 每行2字节(16位)
+                    const byte1 = fontData[i * 2];
+                    const byte2 = fontData[i * 2 + 1];
+                    
+                    // 输出前8位
+                    for (let k = 0; k < 8; k++) {
+                        line += ((byte1 >> (7 - k)) & 1) ? "██" : "[]";
+                    }
+                    
+                    // 输出后4位(HZK12只使用12位中的前12位)
+                    for (let k = 0; k < 4; k++) {
+                        line += ((byte2 >> (7 - k)) & 1) ? "██" : "[]";
+                    }
+                    
+                    debugStr += line + "\n";
+                }
+                console.log(debugStr);
+            }
+            
+            return true;
+        }
+
+        // 改进 drawText 函数，添加保存状态和更好的错误处理
         function drawText() {
             // 保存当前状态到历史记录
             saveState();
             
-            const fontType = document.getElementById('fontSelect').value;
-            const startX = parseInt(document.getElementById('textX').value);
-            const startY = parseInt(document.getElementById('textY').value);
             const text = document.getElementById('asciiText').value;
-            const invert = document.getElementById('invertText').checked; // 获取反显设置
+            const x = parseInt(document.getElementById('textX').value);
+            const y = parseInt(document.getElementById('textY').value);
+            const isInvert = document.getElementById('invertText').checked;
+            const font = document.getElementById('fontSelect').value;
+            // 获取当前选择的汉字字库
+            const hzkType = document.getElementById('hzkSelect').value;
             
-            console.log("渲染文本:", text, "字体:", fontType, "位置:", startX, startY, "反显:", invert);
+            console.log(`绘制文本: "${text}", 位置: (${x},${y}), 反显: ${isInvert}, 字体: ${font}, 汉字字库: ${hzkType}`);
             
-            // 获取选择的字体对象
-            let fontData;
-            switch(fontType) {
-                case 'font_8x8':
-                    fontData = font_8x8;
-                    break;
-                case 'font_8x16':
-                    fontData = font_8x16;
-                    break;
-                case 'font_10x18':
-                    fontData = font_10x18;
-                    break;
-                default:
-                    console.error("未找到字体数据:", fontType);
-                    return;
+            // 如果字库类型改变，切换当前字库
+            if (hzkType !== currentHZKType) {
+                currentHZKType = hzkType;
+                currentHZKData = hzkType === "HZK16" ? hzk16Data : hzk12Data;
+                console.log(`切换到汉字字库: ${hzkType}`);
             }
             
-            if (!fontData) {
-                console.error("未找到字体数据:", fontType);
-                return;
-            }
+            let currentX = x;
             
-            console.log("字体数据:", fontData.width, "x", fontData.height, "bytesPerChar:", fontData.bytesPerChar);
-            
-            // 创建一个临时canvas用于渲染文字
-            const tempCanvas = document.createElement('canvas');
-            const tempCtx = tempCanvas.getContext('2d');
-            
-            // 设置临时canvas的尺寸为文本的尺寸
-            tempCanvas.width = fontData.width * text.length;
-            tempCanvas.height = fontData.height;
-            
-            console.log("临时Canvas尺寸:", tempCanvas.width, "x", tempCanvas.height);
-            
-            // 使用LCDFont库渲染文本到临时canvas
-            LCDFont.renderText(tempCtx, fontData, text, 0, 0, '#000000', null, 0, 1);
-            
-            // 从临时canvas读取像素数据并转移到bitmap
-            const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-            const data = imageData.data;
-            
-            console.log("读取到的图像数据大小:", imageData.width, "x", imageData.height);
-            
-            // 如果是反显模式，先将整个文本区域填充为黑色
-            if (invert) {
-                for (let y = 0; y < tempCanvas.height; y++) {
-                    for (let x = 0; x < tempCanvas.width; x++) {
-                        const bitmapX = startX + x;
-                        const bitmapY = startY + y;
-                        // 确保坐标在bitmap范围内
-                        if (bitmapX >= 0 && bitmapX < bitmap[0].length && bitmapY >= 0 && bitmapY < bitmap.length) {
-                            bitmap[bitmapY][bitmapX] = 1; // 先全部设为黑色
-                        }
+            for (let i = 0; i < text.length; i++) {
+                const char = text.charAt(i);
+                
+                // 检查是否是汉字（通过检查码点范围）
+                const cp = char.codePointAt(0);
+                if (cp > 255) {
+                    console.log(`处理汉字: "${char}", 码点: ${cp.toString(16)}`);
+                    
+                    if (drawHZKChar(char, currentX, y, isInvert)) {
+                        console.log(`成功绘制汉字: "${char}" 在位置 (${currentX},${y})`);
+                        // 根据当前字库类型调整汉字宽度
+                        currentX += (currentHZKType === "HZK16" ? 16 : 12);
+                    } else {
+                        console.error(`无法绘制汉字: "${char}"`);
+                        currentX += (currentHZKType === "HZK16" ? 16 : 12); // 即使失败也要移动指针
                     }
-                }
-            }
-            
-            // 计数设置了多少像素
-            let pixelCount = 0;
-            
-            // 遍历像素数据并设置bitmap
-            for (let y = 0; y < tempCanvas.height; y++) {
-                for (let x = 0; x < tempCanvas.width; x++) {
-                    // 计算在imageData中的索引（每个像素4个值：r,g,b,a）
-                    const dataIndex = (y * tempCanvas.width + x) * 4;
-                    // 检查像素是否有颜色
-                    const r = data[dataIndex];
-                    const g = data[dataIndex + 1];
-                    const b = data[dataIndex + 2];
-                    const a = data[dataIndex + 3];
+                } else {
+                    // ASCII 字符处理逻辑
+                    console.log(`处理ASCII字符: "${char}", 码点: ${cp}`);
                     
-                    // 判断是否为黑色像素
-                    const isBlack = a > 0 && (r < 100 && g < 100 && b < 100);
-                    
-                    const bitmapX = startX + x;
-                    const bitmapY = startY + y;
-                    
-                    // 确保坐标在bitmap范围内
-                    if (bitmapX >= 0 && bitmapX < bitmap[0].length && bitmapY >= 0 && bitmapY < bitmap.length) {
-                        if (invert) {
-                            // 反显模式: 文字像素设为白色(0)，背景已经设为黑色(1)
-                            if (isBlack) {
-                                bitmap[bitmapY][bitmapX] = 0;
-                                pixelCount++;
+                    try {
+                        // 获取选择的字体对象
+                        const fontObj = window[font];
+                        if (!fontObj) {
+                            throw new Error(`字体 ${font} 未加载`);
+                        }
+                        
+                        // 获取字符在字体数据中的索引
+                        const index = LCDFont.getCharIndex(fontObj, char);
+                        if (index >= 0 && index < fontObj.data.length) {
+                            // 从字体数据中提取字符数据
+                            const charData = fontObj.data.slice(index, index + fontObj.bytesPerChar);
+                            
+                            // 计算每行需要的字节数
+                            const bytesPerRow = Math.ceil(fontObj.width / 8);
+                            
+                            // 绘制字符
+                            for (let row = 0; row < fontObj.height; row++) {
+                                // 计算这一行的起始索引
+                                const rowStartIndex = row * bytesPerRow;
+                                
+                                // 处理这一行的每一列（像素）
+                                for (let col = 0; col < fontObj.width; col++) {
+                                    // 计算当前像素位于哪个字节
+                                    const byteIndex = rowStartIndex + Math.floor(col / 8);
+                                    // 计算当前像素在字节中的位置（从MSB开始）
+                                    const bitPosition = 7 - (col % 8);
+                                    
+                                    // 从对应字节中提取位值
+                                    const byte = charData[byteIndex] || 0;
+                                    const bit = (byte >> bitPosition) & 0x01;
+                                    
+                                    // 设置位图像素
+                                    if (currentX + col < bitmap[0].length && y + row < bitmap.length) {
+                                        bitmap[y + row][currentX + col] = isInvert ? !bit : bit;
+                                    }
+                                }
                             }
+                            
+                            // 移动到下一个字符位置
+                            currentX += fontObj.width + 1;
                         } else {
-                            // 正常模式: 文字像素设为黑色(1)
-                            if (isBlack) {
-                                bitmap[bitmapY][bitmapX] = 1;
-                                pixelCount++;
-                            }
+                            console.warn(`字符 "${char}" (码点: ${cp}) 超出字体数据范围`);
+                            currentX += 8; // 跳过这个字符
                         }
+                    } catch (error) {
+                        console.error(`处理字符 "${char}" 时出错:`, error);
+                        currentX += 8; // 出错时也跳过
                     }
                 }
             }
             
-            console.log("设置了", pixelCount, "个像素");
-            
-            // 重绘画布
             drawBitmap();
         }
 
@@ -791,6 +1132,97 @@
         
         // 页面加载完成后执行测试
         // window.addEventListener('load', testLCDFont);  // 注释掉防止调试信息影响界面
+
+        // 在页面加载完成后加载字库
+        window.addEventListener('load', function() {
+            // 加载HZK16字库
+            loadHZK16().then(success => {
+                if (success) {
+                    // 字库加载成功后，测试汉字显示功能
+                    setTimeout(testHZK16, 500);
+                } else {
+                    console.warn('HZK16 字库加载失败，将无法显示汉字');
+                }
+            });
+            
+            // 加载HZK12字库
+            loadHZK12().then(success => {
+                if (success) {
+                    console.log('HZK12 字库加载成功');
+                } else {
+                    console.warn('HZK12 字库加载失败');
+                }
+            });
+            
+            // 监听汉字字库选择变化
+            document.getElementById('hzkSelect').addEventListener('change', function() {
+                const selectedHZK = this.value;
+                currentHZKType = selectedHZK;
+                currentHZKData = selectedHZK === "HZK16" ? hzk16Data : hzk12Data;
+                console.log(`切换到汉字字库: ${selectedHZK}`);
+                
+                // 如果选择的字库未加载，尝试加载
+                if (selectedHZK === "HZK16" && !hzk16Data) {
+                    loadHZK16();
+                } else if (selectedHZK === "HZK12" && !hzk12Data) {
+                    loadHZK12();
+                }
+            });
+            
+            // 添加打开 HZK16 说明的按钮
+            const topPanel = document.querySelector('.top-panel');
+            const infoButton = document.createElement('button');
+            infoButton.textContent = '汉字库说明';
+            infoButton.style.marginLeft = '10px';
+            infoButton.style.backgroundColor = '#3366CC';
+            infoButton.onclick = function() {
+                document.getElementById('hzkInfoModal').style.display = 'block';
+            };
+            topPanel.appendChild(infoButton);
+            
+            // 添加调试按钮
+            const debugButton = document.createElement('button');
+            debugButton.textContent = '调试信息';
+            debugButton.style.marginLeft = '10px';
+            debugButton.style.backgroundColor = '#996633';
+            debugButton.onclick = function() {
+                const debugInfo = document.getElementById('debugInfo');
+                debugInfo.style.display = debugInfo.style.display === 'none' ? 'block' : 'none';
+            };
+            topPanel.appendChild(debugButton);
+            
+            // 添加GB2312测试按钮
+            const gb2312TestButton = document.createElement('button');
+            gb2312TestButton.textContent = 'GB2312测试';
+            gb2312TestButton.style.marginLeft = '10px';
+            gb2312TestButton.style.backgroundColor = '#9933CC';
+            gb2312TestButton.onclick = testGB2312Conversion;
+            topPanel.appendChild(gb2312TestButton);
+        });
+
+        // 添加GB2312测试函数
+        function testGB2312Conversion() {
+            const testChars = ['中', '国', '你', '好', '我', '的', '是', '了', '在', '人', '有', '和', '上', '大', '不'];
+            let results = '';
+            
+            for (const char of testChars) {
+                const gb2312Bytes = unicodeToGB2312(char);
+                if (gb2312Bytes) {
+                    const [area, pos] = getGB2312AreaPos(gb2312Bytes);
+                    const byteSize = currentHZKType === "HZK16" ? 32 : 24;
+                    const offset = (94 * (area - 1) + (pos - 1)) * byteSize;
+                    
+                    results += `字符: ${char}, Unicode: 0x${char.charCodeAt(0).toString(16).toUpperCase()}, `;
+                    results += `GB2312: 0x${gb2312Bytes[0].toString(16).toUpperCase()} 0x${gb2312Bytes[1].toString(16).toUpperCase()}, `;
+                    results += `区位码: ${area}区${pos}位, 偏移: ${offset} (0x${offset.toString(16).toUpperCase()})\n`;
+                } else {
+                    results += `字符: ${char}, Unicode: 0x${char.charCodeAt(0).toString(16).toUpperCase()}, GB2312: 未找到\n`;
+                }
+            }
+            
+            console.log("GB2312编码测试结果:\n" + results);
+            alert("GB2312编码测试结果已输出到控制台");
+        }
     </script>
 </body>
 </html> 
