@@ -134,6 +134,18 @@
     <script src="fonts/font_8x8.js"></script>
     <script src="fonts/font_8x16.js"></script>
     <script src="fonts/font_10x18.js"></script>
+    <!-- 引入二维码生成库（多个备选源） -->
+    <script src="libs/qrcode.min.js"></script>
+    <script>
+        // 检查QRCode库是否加载成功
+        window.addEventListener('load', function() {
+            if (typeof QRCode === 'undefined') {
+                alert('二维码库加载失败，请检查网络连接或刷新页面重试。');
+            } else {
+                console.log('QRCode库加载成功');
+            }
+        });
+    </script>
 </head>
 <body>
     <div class="header">
@@ -170,11 +182,16 @@
             </label>
             <button onclick="drawText()">放置文本</button>
         </div>
-        <div id="hzk16Status" style="color: red; margin-left: 10px; display: none;">
-            HZK16 字库未加载，汉字功能不可用
-        </div>
         <div class="input-group">
             <button onclick="exportBitmap()">导出字模</button>
+        </div>
+        <div class="input-group">
+            <label>二维码:</label>
+            <input type="text" id="quickQrText" placeholder="快速生成二维码" style="width: 150px;">
+            <button onclick="quickGenerateQR()" style="background-color: #2196F3;">生成</button>
+        </div>
+        <div id="hzk16Status" style="color: red; margin-left: 10px; display: none;">
+            HZK16 字库未加载，汉字功能不可用
         </div>
         <div id="debugInfo" style="display: none; padding: 5px; background-color: #f5f5f5; border: 1px solid #ddd; margin: 5px; font-family: monospace; font-size: 12px;">
             <div><strong>调试信息</strong> <button onclick="document.getElementById('debugInfo').style.display='none'" style="float:right;margin:0;padding:2px 5px;">关闭</button></div>
@@ -217,6 +234,74 @@
                         <input type="checkbox" id="showGrid" checked onchange="drawBitmap()">
                         显示网格
                     </label>
+                </div>
+            </div>
+            
+            <div class="control-section">
+                <h3>二维码生成</h3>
+                <div class="input-group">
+                    <label>内容:</label>
+                    <textarea id="qrText" placeholder="输入要生成二维码的文本" style="width: 100%; height: 60px; resize: vertical; margin: 5px 0;"></textarea>
+                </div>
+                <div class="input-group">
+                    <label>纠错级别:</label>
+                    <select id="qrErrorLevel" style="width: 100%;">
+                        <option value="L">L (约7%)</option>
+                        <option value="M" selected>M (约15%)</option>
+                        <option value="Q">Q (约25%)</option>
+                        <option value="H">H (约30%)</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>版本 (可选):</label>
+                    <select id="qrVersion" style="width: 100%;">
+                        <option value="auto" selected>自动选择</option>
+                        <option value="1">1 (21x21)</option>
+                        <option value="2">2 (25x25)</option>
+                        <option value="3">3 (29x29)</option>
+                        <option value="4">4 (33x33)</option>
+                        <option value="5">5 (37x37)</option>
+                        <option value="6">6 (41x41)</option>
+                        <option value="7">7 (45x45)</option>
+                        <option value="8">8 (49x49)</option>
+                        <option value="9">9 (53x53)</option>
+                        <option value="10">10 (57x57)</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>X位置:</label>
+                    <input type="number" id="qrX" value="0" min="0" max="255" style="width: 100%; margin: 2px 0;">
+                </div>
+                <div class="input-group">
+                    <label>Y位置:</label>
+                    <input type="number" id="qrY" value="0" min="0" max="255" style="width: 100%; margin: 2px 0;">
+                </div>
+                <div class="checkbox-container">
+                    <label>
+                        <input type="checkbox" id="qrInvert"> 反转颜色
+                    </label>
+                </div>
+                <div class="input-group">
+                    <label>像素模式:</label>
+                    <select id="qrPixelMode" style="width: 100%; margin: 2px 0;">
+                        <option value="1">1x1 像素</option>
+                        <option value="2">2x2 像素</option>
+                    </select>
+                </div>
+                <button onclick="generateQRCode()" style="width: 100%; margin: 5px 0;">生成二维码</button>
+                <div style="margin: 10px 0; border-top: 1px solid #eee; padding-top: 10px;">
+                    <div style="font-size: 12px; color: #666; margin-bottom: 5px;">常用模板:</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                        <button onclick="insertQRTemplate('url')" style="font-size: 11px; padding: 3px;">网址</button>
+                        <button onclick="insertQRTemplate('wifi')" style="font-size: 11px; padding: 3px;">WiFi</button>
+                        <button onclick="insertQRTemplate('email')" style="font-size: 11px; padding: 3px;">邮件</button>
+                        <button onclick="insertQRTemplate('phone')" style="font-size: 11px; padding: 3px;">电话</button>
+                        <button onclick="insertQRTemplate('sms')" style="font-size: 11px; padding: 3px;">短信</button>
+                        <button onclick="insertQRTemplate('vcard')" style="font-size: 11px; padding: 3px;">名片</button>
+                    </div>
+                </div>
+                <div id="qrPreview" style="margin-top: 10px; text-align: center; border: 1px solid #ddd; background: #f9f9f9; min-height: 40px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666;">
+                    二维码预览
                 </div>
             </div>
         </div>
@@ -1135,6 +1220,9 @@
 
         // 在页面加载完成后加载字库
         window.addEventListener('load', function() {
+            // 检查二维码库是否加载成功
+            checkQRCodeLibrary();
+            
             // 加载HZK16字库
             loadHZK16().then(success => {
                 if (success) {
@@ -1198,7 +1286,290 @@
             gb2312TestButton.style.backgroundColor = '#9933CC';
             gb2312TestButton.onclick = testGB2312Conversion;
             topPanel.appendChild(gb2312TestButton);
+            
+            // 添加二维码功能的事件监听器
+            setupQRCodeEventListeners();
         });
+
+        // 设置二维码相关的事件监听器
+        function setupQRCodeEventListeners() {
+            // 实时验证二维码内容
+            const qrTextArea = document.getElementById('qrText');
+            qrTextArea.addEventListener('input', function() {
+                const validation = validateQRContent(this.value);
+                if (!validation.valid && this.value.trim().length > 0) {
+                    this.style.borderColor = '#ff0000';
+                    this.title = validation.message;
+                } else {
+                    this.style.borderColor = '';
+                    this.title = '';
+                }
+            });
+
+            // 纠错级别变化时更新容量提示
+            const errorLevelSelect = document.getElementById('qrErrorLevel');
+            errorLevelSelect.addEventListener('change', function() {
+                updateCapacityHint();
+            });
+
+            // 版本选择变化时更新预期尺寸
+            const versionSelect = document.getElementById('qrVersion');
+            versionSelect.addEventListener('change', function() {
+                updateSizeHint();
+            });
+
+            // 添加快捷键支持
+            qrTextArea.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    generateQRCode();
+                }
+            });
+            
+            // 快速输入框支持回车键生成
+            const quickQrText = document.getElementById('quickQrText');
+            quickQrText.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    quickGenerateQR();
+                }
+            });
+        }
+
+        // 更新容量提示
+        function updateCapacityHint() {
+            const capacity = getQRCapacityInfo();
+            const errorLevel = document.getElementById('qrErrorLevel').value;
+            
+            // 可以在界面上显示容量提示
+            console.log(`当前纠错级别 ${errorLevel} 的容量范围: ${capacity.version1} - ${capacity.version10} 个数字字符`);
+        }
+
+        // 更新尺寸提示
+        function updateSizeHint() {
+            const version = document.getElementById('qrVersion').value;
+            if (version !== 'auto') {
+                const size = 17 + 4 * parseInt(version); // QR码尺寸计算公式
+                console.log(`版本 ${version} 的二维码尺寸: ${size}x${size} 像素`);
+            }
+        }
+
+        // 二维码生成功能
+        async function generateQRCode() {
+            if (typeof QRCode === 'undefined') {
+                alert('二维码库未加载，请刷新页面重试');
+                return;
+            }
+
+            const text = document.getElementById('qrText').value.trim();
+            if (!text) {
+                alert('请输入要生成二维码的内容');
+                return;
+            }
+
+            const errorLevel = document.getElementById('qrErrorLevel').value;
+            const version = document.getElementById('qrVersion').value;
+            const x = parseInt(document.getElementById('qrX').value) || 0;
+            const y = parseInt(document.getElementById('qrY').value) || 0;
+            const invert = document.getElementById('qrInvert').checked;
+
+            try {
+                // 配置二维码选项
+                const options = {
+                    errorCorrectionLevel: errorLevel,
+                    margin: 1,
+                    scale: 1,
+                    width: undefined // 让库自动计算合适的尺寸
+                };
+
+                // 如果不是自动选择版本，则指定版本
+                if (version !== 'auto') {
+                    options.version = parseInt(version);
+                }
+
+                // 创建临时canvas
+                const qrCanvas = document.createElement('canvas');
+                
+                // 尝试使用toCanvas方法
+                try {
+                    await QRCode.toCanvas(qrCanvas, text, options);
+                } catch (e) {
+                    console.error('toCanvas方法失败，尝试其他方法:', e);
+                    
+                    // 如果toCanvas失败，尝试使用QRCode构造函数
+                    const qr = new QRCode(qrCanvas, {
+                        text: text,
+                        width: 128,
+                        height: 128,
+                        colorDark: '#000000',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel[errorLevel]
+                    });
+                }
+
+                // 更新预览
+                updateQRPreview(qrCanvas);
+
+                // 将二维码绘制到主画布
+                drawQRCodeToMainCanvas(qrCanvas, x, y, invert);
+
+            } catch (error) {
+                console.error('二维码生成失败:', error);
+                alert('二维码生成失败，请检查输入内容和参数设置。\n错误信息: ' + error.message);
+            }
+        }
+
+        // 快速生成二维码功能
+        async function quickGenerateQR() {
+            if (typeof QRCode === 'undefined') {
+                alert('二维码库未加载，请刷新页面重试');
+                return;
+            }
+
+            const text = document.getElementById('quickQrText').value.trim();
+            if (!text) {
+                alert('请输入要生成二维码的内容');
+                return;
+            }
+
+            try {
+                // 使用默认设置快速生成
+                const options = {
+                    errorCorrectionLevel: 'M',
+                    margin: 1,
+                    scale: 1,
+                    width: undefined
+                };
+
+                const qrCanvas = document.createElement('canvas');
+                
+                try {
+                    await QRCode.toCanvas(qrCanvas, text, options);
+                } catch (e) {
+                    console.error('toCanvas方法失败，尝试其他方法:', e);
+                    
+                    const qr = new QRCode(qrCanvas, {
+                        text: text,
+                        width: 128,
+                        height: 128,
+                        colorDark: '#000000',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                }
+
+                // 获取当前像素模式
+                const pixelMode = parseInt(document.getElementById('qrPixelMode').value);
+                
+                // 智能定位：找一个合适的位置放置二维码
+                const canvasWidth = parseInt(document.getElementById('width').value);
+                const canvasHeight = parseInt(document.getElementById('height').value);
+                
+                let x = 0, y = 0;
+                
+                // 考虑像素模式计算实际尺寸
+                const actualWidth = qrCanvas.width * pixelMode;
+                const actualHeight = qrCanvas.height * pixelMode;
+                
+                // 如果屏幕足够大，尝试放在右上角
+                if (canvasWidth >= actualWidth + 10 && canvasHeight >= actualHeight + 10) {
+                    x = Math.max(0, canvasWidth - actualWidth - 5);
+                    y = 5;
+                }
+
+                // 自动更新左侧面板的参数
+                document.getElementById('qrText').value = text;
+                document.getElementById('qrX').value = x;
+                document.getElementById('qrY').value = y;
+
+                // 更新预览
+                updateQRPreview(qrCanvas);
+
+                // 绘制到主画布
+                drawQRCodeToMainCanvas(qrCanvas, x, y, false);
+
+                // 清空快速输入框
+                document.getElementById('quickQrText').value = '';
+
+                console.log(`快速生成二维码成功: "${text}" at (${x}, ${y}), 像素模式: ${pixelMode}x${pixelMode}`);
+
+            } catch (error) {
+                console.error('快速生成二维码失败:', error);
+                alert('二维码生成失败，请检查输入内容。\n错误信息: ' + error.message);
+            }
+        }
+
+        // 检查二维码库是否加载成功
+        function checkQRCodeLibrary() {
+            if (typeof QRCode === 'undefined') {
+                console.error('QRCode库未加载');
+                // 尝试重新加载
+                loadBackupQRCode();
+                return false;
+            }
+            return true;
+        }
+
+        // 验证二维码内容的合法性
+        function validateQRContent(text) {
+            if (!text || text.trim().length === 0) {
+                return { valid: false, message: '内容不能为空' };
+            }
+
+            // 检查内容长度（不同纠错级别和版本有不同的容量限制）
+            const errorLevel = document.getElementById('qrErrorLevel').value;
+            const version = document.getElementById('qrVersion').value;
+
+            // 简单的长度检查（具体限制取决于内容类型和纠错级别）
+            if (text.length > 2000) {
+                return { valid: false, message: '内容过长，请减少字符数量' };
+            }
+
+            return { valid: true, message: '' };
+        }
+
+        // 获取二维码容量信息
+        function getQRCapacityInfo() {
+            const errorLevel = document.getElementById('qrErrorLevel').value;
+            
+            // 返回不同纠错级别下的大致容量（数字字符）
+            const capacities = {
+                'L': { version1: 41, version10: 331 },
+                'M': { version1: 34, version10: 271 },
+                'Q': { version1: 27, version10: 213 },
+                'H': { version1: 17, version10: 131 }
+            };
+
+            return capacities[errorLevel] || capacities['M'];
+        }
+
+        // 添加一些常用的二维码模板
+        function insertQRTemplate(template) {
+            const qrTextArea = document.getElementById('qrText');
+            switch (template) {
+                case 'url':
+                    qrTextArea.value = 'https://';
+                    break;
+                case 'wifi':
+                    qrTextArea.value = 'WIFI:T:WPA;S:WiFi名称;P:密码;;';
+                    break;
+                case 'email':
+                    qrTextArea.value = 'mailto:example@email.com?subject=主题&body=内容';
+                    break;
+                case 'phone':
+                    qrTextArea.value = 'tel:+86';
+                    break;
+                case 'sms':
+                    qrTextArea.value = 'sms:+86:消息内容';
+                    break;
+                case 'vcard':
+                    qrTextArea.value = 'BEGIN:VCARD\nVERSION:3.0\nFN:姓名\nORG:公司\nTEL:电话\nEMAIL:邮箱\nEND:VCARD';
+                    break;
+                default:
+                    qrTextArea.value = '示例文本';
+            }
+            qrTextArea.focus();
+        }
 
         // 添加GB2312测试函数
         function testGB2312Conversion() {
@@ -1222,6 +1593,92 @@
             
             console.log("GB2312编码测试结果:\n" + results);
             alert("GB2312编码测试结果已输出到控制台");
+        }
+
+        // 更新二维码预览
+        function updateQRPreview(qrCanvas) {
+            const previewDiv = document.getElementById('qrPreview');
+            previewDiv.innerHTML = '';
+            
+            // 创建缩小版的预览图
+            const previewCanvas = document.createElement('canvas');
+            const previewCtx = previewCanvas.getContext('2d');
+            const maxSize = 150; // 预览最大尺寸
+            
+            const scale = Math.min(maxSize / qrCanvas.width, maxSize / qrCanvas.height);
+            previewCanvas.width = qrCanvas.width * scale;
+            previewCanvas.height = qrCanvas.height * scale;
+            
+            previewCtx.imageSmoothingEnabled = false; // 保持像素清晰
+            previewCtx.drawImage(qrCanvas, 0, 0, previewCanvas.width, previewCanvas.height);
+            
+            previewCanvas.style.border = '1px solid #ccc';
+            previewDiv.appendChild(previewCanvas);
+            
+            // 添加尺寸信息
+            const sizeInfo = document.createElement('div');
+            sizeInfo.style.fontSize = '10px';
+            sizeInfo.style.color = '#666';
+            sizeInfo.style.marginTop = '5px';
+            sizeInfo.textContent = `${qrCanvas.width}x${qrCanvas.height} 像素`;
+            previewDiv.appendChild(sizeInfo);
+        }
+
+        // 将二维码绘制到主画布
+        function drawQRCodeToMainCanvas(qrCanvas, startX, startY, invert) {
+            // 保存当前状态用于撤销
+            saveState();
+
+            const qrCtx = qrCanvas.getContext('2d');
+            const qrImageData = qrCtx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+            const qrPixels = qrImageData.data;
+
+            const canvasWidth = parseInt(document.getElementById('width').value);
+            const canvasHeight = parseInt(document.getElementById('height').value);
+            
+            // 获取像素模式
+            const pixelMode = parseInt(document.getElementById('qrPixelMode').value);
+            
+            // 遍历二维码的每个像素
+            for (let qrY = 0; qrY < qrCanvas.height; qrY++) {
+                for (let qrX = 0; qrX < qrCanvas.width; qrX++) {
+                    const pixelIndex = (qrY * qrCanvas.width + qrX) * 4;
+                    const r = qrPixels[pixelIndex];
+                    const g = qrPixels[pixelIndex + 1];
+                    const b = qrPixels[pixelIndex + 2];
+                    const a = qrPixels[pixelIndex + 3];
+
+                    // 判断是否为黑色像素 (考虑透明度)
+                    const isBlack = a > 128 && (r + g + b) / 3 < 128;
+                    
+                    // 计算在主画布上的基础位置
+                    const baseX = startX + qrX * pixelMode;
+                    const baseY = startY + qrY * pixelMode;
+
+                    // 根据像素模式绘制对应大小的方块
+                    for (let py = 0; py < pixelMode; py++) {
+                        for (let px = 0; px < pixelMode; px++) {
+                            const mainX = baseX + px;
+                            const mainY = baseY + py;
+
+                            // 检查边界
+                            if (mainX >= 0 && mainX < canvasWidth && mainY >= 0 && mainY < canvasHeight) {
+                                // 根据invert设置来决定像素值
+                                if (invert) {
+                                    bitmap[mainY][mainX] = isBlack ? 0 : 1; // 反转：黑变白，白变黑
+                                } else {
+                                    bitmap[mainY][mainX] = isBlack ? 1 : 0; // 正常：黑为1，白为0
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 重新绘制画布
+            drawBitmap();
+
+            console.log(`二维码已绘制到位置 (${startX}, ${startY})，尺寸: ${qrCanvas.width * pixelMode}x${qrCanvas.height * pixelMode}，像素模式: ${pixelMode}x${pixelMode}`);
         }
     </script>
 </body>
