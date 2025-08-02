@@ -190,6 +190,11 @@
             <input type="text" id="quickQrText" placeholder="快速生成二维码" style="width: 150px;">
             <button onclick="quickGenerateQR()" style="background-color: #2196F3;">生成</button>
         </div>
+        <div class="input-group">
+            <label>图片:</label>
+            <input type="file" id="quickImageUpload" accept=".png,.bmp" style="width: 150px; font-size: 12px;">
+            <button onclick="quickProcessImage()" style="background-color: #FF9800;">快速处理</button>
+        </div>
         <div id="hzk16Status" style="color: red; margin-left: 10px; display: none;">
             HZK16 字库未加载，汉字功能不可用
         </div>
@@ -302,6 +307,55 @@
                 </div>
                 <div id="qrPreview" style="margin-top: 10px; text-align: center; border: 1px solid #ddd; background: #f9f9f9; min-height: 40px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666;">
                     二维码预览
+                </div>
+            </div>
+            
+            <div class="control-section">
+                <h3>图片处理</h3>
+                <div class="input-group">
+                    <label>选择图片:</label>
+                    <input type="file" id="imageUpload" accept=".png,.bmp" style="width: 100%; margin: 5px 0;">
+                </div>
+                <div class="input-group">
+                    <label>缩放模式:</label>
+                    <select id="scaleMode" style="width: 100%; margin: 2px 0;">
+                        <option value="fit">适应屏幕</option>
+                        <option value="fill">填充屏幕</option>
+                        <option value="original">原始尺寸</option>
+                        <option value="custom">自定义比例</option>
+                    </select>
+                </div>
+                <div id="customScaleGroup" class="input-group" style="display: none;">
+                    <label>缩放比例:</label>
+                    <input type="number" id="customScale" value="0.5" min="0.1" max="10" step="0.1" style="width: 100%; margin: 2px 0;">
+                </div>
+                <div class="input-group">
+                    <label>颜色阈值 (0-255):</label>
+                    <div class="slider-container">
+                        <input type="range" id="colorThreshold" min="0" max="255" value="128" oninput="updateThresholdValue(this.value)">
+                        <span class="slider-value" id="thresholdValue">128</span>
+                    </div>
+                    <div style="font-size: 12px; color: #666;">低于此值的像素将显示为黑色</div>
+                </div>
+                <div class="input-group">
+                    <label>X位置:</label>
+                    <input type="number" id="imageX" value="0" min="0" max="255" style="width: 100%; margin: 2px 0;">
+                </div>
+                <div class="input-group">
+                    <label>Y位置:</label>
+                    <input type="number" id="imageY" value="0" min="0" max="255" style="width: 100%; margin: 2px 0;">
+                </div>
+                <div class="checkbox-container">
+                    <label>
+                        <input type="checkbox" id="imageInvert"> 反转颜色
+                    </label>
+                </div>
+                <button onclick="processAndDrawImage()" style="width: 100%; margin: 5px 0;">处理图片</button>
+                <div id="imagePreview" style="margin-top: 10px; text-align: center; border: 1px solid #ddd; background: #f9f9f9; min-height: 60px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #666;">
+                    图片预览
+                </div>
+                <div id="imageInfo" style="margin-top: 5px; font-size: 12px; color: #666; text-align: center;">
+                    尚未选择图片
                 </div>
             </div>
         </div>
@@ -1223,6 +1277,12 @@
             // 检查二维码库是否加载成功
             checkQRCodeLibrary();
             
+            // 初始化图片处理事件监听器
+            setupImageProcessingEventListeners();
+            
+            // 初始化快速图片上传事件监听器
+            setupQuickImageEventListeners();
+            
             // 加载HZK16字库
             loadHZK16().then(success => {
                 if (success) {
@@ -1680,6 +1740,447 @@
 
             console.log(`二维码已绘制到位置 (${startX}, ${startY})，尺寸: ${qrCanvas.width * pixelMode}x${qrCanvas.height * pixelMode}，像素模式: ${pixelMode}x${pixelMode}`);
         }
+
+        // 图片处理相关变量和函数
+        let currentImageData = null;
+        let originalImage = null;
+
+        // 更新阈值显示值
+        function updateThresholdValue(value) {
+            document.getElementById('thresholdValue').textContent = value;
+        }
+
+        // 设置图片处理相关的事件监听器
+        function setupImageProcessingEventListeners() {
+            // 文件选择事件
+            const imageUpload = document.getElementById('imageUpload');
+            imageUpload.addEventListener('change', handleImageUpload);
+
+            // 缩放模式变化事件
+            const scaleMode = document.getElementById('scaleMode');
+            scaleMode.addEventListener('change', function() {
+                const customScaleGroup = document.getElementById('customScaleGroup');
+                if (this.value === 'custom') {
+                    customScaleGroup.style.display = 'block';
+                } else {
+                    customScaleGroup.style.display = 'none';
+                }
+                
+                // 如果已有图片，重新生成预览
+                if (originalImage) {
+                    generateImagePreview();
+                }
+            });
+
+            // 自定义缩放比例变化事件
+            const customScale = document.getElementById('customScale');
+            customScale.addEventListener('input', function() {
+                if (originalImage && document.getElementById('scaleMode').value === 'custom') {
+                    generateImagePreview();
+                }
+            });
+
+            // 阈值变化时重新生成预览
+            const colorThreshold = document.getElementById('colorThreshold');
+            colorThreshold.addEventListener('input', function() {
+                if (originalImage) {
+                    generateImagePreview();
+                }
+            });
+
+            // 反转颜色变化时重新生成预览
+            const imageInvert = document.getElementById('imageInvert');
+            imageInvert.addEventListener('change', function() {
+                if (originalImage) {
+                    generateImagePreview();
+                }
+            });
+        }
+
+        // 处理图片上传
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                resetImageProcessing();
+                return;
+            }
+
+            // 检查文件类型
+            const allowedTypes = ['image/png', 'image/bmp'];
+            if (!allowedTypes.includes(file.type)) {
+                alert('只支持PNG和BMP格式的图片！');
+                event.target.value = '';
+                resetImageProcessing();
+                return;
+            }
+
+            // 检查文件大小（限制在10MB以内）
+            const maxSize = 10 * 1024 * 1024; // 10MB
+            if (file.size > maxSize) {
+                alert('图片文件过大，请选择小于10MB的图片！');
+                event.target.value = '';
+                resetImageProcessing();
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    originalImage = img;
+                    updateImageInfo(img, file);
+                    generateImagePreview();
+                };
+                img.onerror = function() {
+                    alert('图片加载失败，请检查文件格式！');
+                    resetImageProcessing();
+                };
+                img.src = e.target.result;
+            };
+            reader.onerror = function() {
+                alert('文件读取失败！');
+                resetImageProcessing();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // 重置图片处理
+        function resetImageProcessing() {
+            originalImage = null;
+            currentImageData = null;
+            document.getElementById('imagePreview').innerHTML = '<div style="font-size: 12px; color: #666;">图片预览</div>';
+            document.getElementById('imageInfo').textContent = '尚未选择图片';
+        }
+
+        // 更新图片信息显示
+        function updateImageInfo(img, file) {
+            const sizeKB = Math.round(file.size / 1024);
+            const infoText = `${img.width}×${img.height} 像素, ${sizeKB}KB`;
+            document.getElementById('imageInfo').textContent = infoText;
+        }
+
+        // 生成图片预览
+        function generateImagePreview() {
+            if (!originalImage) return;
+
+            const canvasWidth = parseInt(document.getElementById('width').value);
+            const canvasHeight = parseInt(document.getElementById('height').value);
+            const scaleMode = document.getElementById('scaleMode').value;
+            const customScaleValue = parseFloat(document.getElementById('customScale').value);
+            const threshold = parseInt(document.getElementById('colorThreshold').value);
+            const invert = document.getElementById('imageInvert').checked;
+
+            // 计算目标尺寸
+            const targetSize = calculateTargetSize(originalImage.width, originalImage.height, canvasWidth, canvasHeight, scaleMode, customScaleValue);
+
+            // 创建临时canvas进行处理
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = targetSize.width;
+            tempCanvas.height = targetSize.height;
+
+            // 绘制缩放后的图片
+            tempCtx.imageSmoothingEnabled = true;
+            tempCtx.drawImage(originalImage, 0, 0, targetSize.width, targetSize.height);
+
+            // 获取像素数据
+            const imageData = tempCtx.getImageData(0, 0, targetSize.width, targetSize.height);
+            const processedData = processImageData(imageData, threshold, invert);
+
+            // 保存处理后的数据
+            currentImageData = {
+                width: targetSize.width,
+                height: targetSize.height,
+                data: processedData
+            };
+
+            // 生成预览
+            updateImagePreview(targetSize.width, targetSize.height, processedData);
+        }
+
+        // 计算目标尺寸
+        function calculateTargetSize(imgWidth, imgHeight, canvasWidth, canvasHeight, scaleMode, customScale) {
+            let targetWidth, targetHeight;
+
+            switch (scaleMode) {
+                case 'fit':
+                    // 适应屏幕（保持比例）
+                    const fitScale = Math.min(canvasWidth / imgWidth, canvasHeight / imgHeight);
+                    targetWidth = Math.round(imgWidth * fitScale);
+                    targetHeight = Math.round(imgHeight * fitScale);
+                    break;
+
+                case 'fill':
+                    // 填充屏幕（可能裁剪）
+                    const fillScale = Math.max(canvasWidth / imgWidth, canvasHeight / imgHeight);
+                    targetWidth = Math.min(Math.round(imgWidth * fillScale), canvasWidth);
+                    targetHeight = Math.min(Math.round(imgHeight * fillScale), canvasHeight);
+                    break;
+
+                case 'original':
+                    // 原始尺寸
+                    targetWidth = Math.min(imgWidth, canvasWidth);
+                    targetHeight = Math.min(imgHeight, canvasHeight);
+                    break;
+
+                case 'custom':
+                    // 自定义比例
+                    targetWidth = Math.min(Math.round(imgWidth * customScale), canvasWidth);
+                    targetHeight = Math.min(Math.round(imgHeight * customScale), canvasHeight);
+                    break;
+
+                default:
+                    targetWidth = imgWidth;
+                    targetHeight = imgHeight;
+            }
+
+            return { width: targetWidth, height: targetHeight };
+        }
+
+        // 处理图片数据（转换为单色）
+        function processImageData(imageData, threshold, invert) {
+            const pixels = imageData.data;
+            const width = imageData.width;
+            const height = imageData.height;
+            const result = [];
+
+            for (let y = 0; y < height; y++) {
+                const row = [];
+                for (let x = 0; x < width; x++) {
+                    const index = (y * width + x) * 4;
+                    const r = pixels[index];
+                    const g = pixels[index + 1];
+                    const b = pixels[index + 2];
+                    const alpha = pixels[index + 3];
+
+                    // 计算灰度值（加权平均）
+                    const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                    
+                    // 考虑透明度
+                    const effectiveGray = alpha < 128 ? 255 : gray; // 透明像素视为白色
+                    
+                    // 根据阈值判断是否为黑色像素
+                    let isBlack = effectiveGray < threshold;
+                    
+                    // 如果反转，则翻转结果
+                    if (invert) {
+                        isBlack = !isBlack;
+                    }
+                    
+                    row.push(isBlack ? 1 : 0);
+                }
+                result.push(row);
+            }
+
+            return result;
+        }
+
+        // 更新图片预览显示
+        function updateImagePreview(width, height, data) {
+            const previewDiv = document.getElementById('imagePreview');
+            previewDiv.innerHTML = '';
+
+            // 创建预览canvas
+            const previewCanvas = document.createElement('canvas');
+            const previewCtx = previewCanvas.getContext('2d');
+            
+            // 设置预览大小（最大150px）
+            const maxPreviewSize = 150;
+            const previewScale = Math.min(maxPreviewSize / width, maxPreviewSize / height);
+            previewCanvas.width = width * previewScale;
+            previewCanvas.height = height * previewScale;
+
+            // 绘制预览
+            previewCtx.fillStyle = LCD_BACKGROUND;
+            previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+            
+            previewCtx.fillStyle = 'black';
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    if (data[y][x]) {
+                        previewCtx.fillRect(
+                            x * previewScale, 
+                            y * previewScale, 
+                            previewScale, 
+                            previewScale
+                        );
+                    }
+                }
+            }
+
+            previewCanvas.style.border = '1px solid #ccc';
+            previewDiv.appendChild(previewCanvas);
+
+            // 添加尺寸信息
+            const sizeInfo = document.createElement('div');
+            sizeInfo.style.fontSize = '10px';
+            sizeInfo.style.color = '#666';
+            sizeInfo.style.marginTop = '5px';
+            sizeInfo.textContent = `处理后: ${width}×${height} 像素`;
+            previewDiv.appendChild(sizeInfo);
+        }
+
+        // 处理并绘制图片到主画布
+        function processAndDrawImage() {
+            if (!currentImageData) {
+                alert('请先选择并预览图片！');
+                return;
+            }
+
+            // 保存当前状态用于撤销
+            saveState();
+
+            const x = parseInt(document.getElementById('imageX').value) || 0;
+            const y = parseInt(document.getElementById('imageY').value) || 0;
+            const canvasWidth = parseInt(document.getElementById('width').value);
+            const canvasHeight = parseInt(document.getElementById('height').value);
+
+            const imgWidth = currentImageData.width;
+            const imgHeight = currentImageData.height;
+            const imgData = currentImageData.data;
+
+            // 将图片数据绘制到主画布
+            for (let imgY = 0; imgY < imgHeight; imgY++) {
+                for (let imgX = 0; imgX < imgWidth; imgX++) {
+                    const targetX = x + imgX;
+                    const targetY = y + imgY;
+
+                    // 检查边界
+                    if (targetX >= 0 && targetX < canvasWidth && targetY >= 0 && targetY < canvasHeight) {
+                        bitmap[targetY][targetX] = imgData[imgY][imgX];
+                    }
+                }
+            }
+
+            // 重新绘制画布
+            drawBitmap();
+
+            console.log(`图片已绘制到位置 (${x}, ${y})，尺寸: ${imgWidth}×${imgHeight}`);
+            alert(`图片处理完成！已绘制到位置 (${x}, ${y})`);
+        }
+
+        // 快速处理图片功能
+        function quickProcessImage() {
+            const quickUpload = document.getElementById('quickImageUpload');
+            const file = quickUpload.files[0];
+            
+            if (!file) {
+                alert('请先选择一个图片文件！');
+                return;
+            }
+
+            // 检查文件类型
+            const allowedTypes = ['image/png', 'image/bmp'];
+            if (!allowedTypes.includes(file.type)) {
+                alert('只支持PNG和BMP格式的图片！');
+                quickUpload.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    // 使用默认设置快速处理
+                    const canvasWidth = parseInt(document.getElementById('width').value);
+                    const canvasHeight = parseInt(document.getElementById('height').value);
+                    
+                    // 智能缩放：适应屏幕
+                    const fitScale = Math.min(canvasWidth / img.width, canvasHeight / img.height);
+                    const targetWidth = Math.round(img.width * fitScale);
+                    const targetHeight = Math.round(img.height * fitScale);
+                    
+                    // 创建临时canvas处理
+                    const tempCanvas = document.createElement('canvas');
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCanvas.width = targetWidth;
+                    tempCanvas.height = targetHeight;
+                    
+                    tempCtx.imageSmoothingEnabled = true;
+                    tempCtx.drawImage(img, 0, 0, targetWidth, targetHeight);
+                    
+                    // 获取像素数据并处理（使用默认阈值128）
+                    const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+                    const processedData = processImageData(imageData, 128, false);
+                    
+                    // 保存当前状态用于撤销
+                    saveState();
+                    
+                    // 智能定位：尝试放在画布中央
+                    const x = Math.max(0, Math.floor((canvasWidth - targetWidth) / 2));
+                    const y = Math.max(0, Math.floor((canvasHeight - targetHeight) / 2));
+                    
+                    // 将图片数据绘制到主画布
+                    for (let imgY = 0; imgY < targetHeight; imgY++) {
+                        for (let imgX = 0; imgX < targetWidth; imgX++) {
+                            const targetX = x + imgX;
+                            const targetY = y + imgY;
+                            
+                            if (targetX >= 0 && targetX < canvasWidth && targetY >= 0 && targetY < canvasHeight) {
+                                bitmap[targetY][targetX] = processedData[imgY][imgX];
+                            }
+                        }
+                    }
+                    
+                    // 重新绘制画布
+                    drawBitmap();
+                    
+                    // 同步更新左侧面板的参数
+                    document.getElementById('imageUpload').value = '';
+                    document.getElementById('scaleMode').value = 'fit';
+                    document.getElementById('colorThreshold').value = 128;
+                    document.getElementById('thresholdValue').textContent = '128';
+                    document.getElementById('imageX').value = x;
+                    document.getElementById('imageY').value = y;
+                    document.getElementById('imageInvert').checked = false;
+                    
+                    // 清空快速上传
+                    quickUpload.value = '';
+                    
+                    console.log(`快速处理图片成功: ${targetWidth}×${targetHeight} at (${x}, ${y})`);
+                    alert(`图片快速处理完成！已放置在位置 (${x}, ${y})`);
+                };
+                img.onerror = function() {
+                    alert('图片加载失败，请检查文件格式！');
+                    quickUpload.value = '';
+                };
+                img.src = e.target.result;
+            };
+            reader.onerror = function() {
+                alert('文件读取失败！');
+                quickUpload.value = '';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // 设置快速图片上传的事件监听器
+        function setupQuickImageEventListeners() {
+            const quickImageUpload = document.getElementById('quickImageUpload');
+            
+            // 支持拖拽文件
+            quickImageUpload.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                this.style.backgroundColor = '#e3f2fd';
+            });
+            
+            quickImageUpload.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                this.style.backgroundColor = '';
+            });
+            
+            quickImageUpload.addEventListener('drop', function(e) {
+                e.preventDefault();
+                this.style.backgroundColor = '';
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    this.files = files;
+                    // 自动触发快速处理
+                    setTimeout(quickProcessImage, 100);
+                }
+            });
+        }
+
     </script>
 </body>
 </html> 
