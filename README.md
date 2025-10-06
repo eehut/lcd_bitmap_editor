@@ -3,7 +3,7 @@
 这是一个基于网页的 LCD 单色液晶显示位图编辑器，用于创建和编辑适用于单色 LCD 显示屏的位图图案。该工具提供了直观的图形界面，让用户能够轻松地创建、编辑和导出 LCD 显示所需的字模数据。
 
 
-![在线使用](https://www.eehut.com/lcd_bitmap_editor/)
+[在线链接](https://www.eehut.com/lcd_bitmap_editor/)
 
 ## 主要功能
 
