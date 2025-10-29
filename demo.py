@@ -26,7 +26,7 @@ def main():
     
     Handler = MyHTTPRequestHandler
     
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+    with socketserver.TCPServer(("0.0.0.0", PORT), Handler) as httpd:
         address = f"http://localhost:{PORT}"
         print(f"Server started at {address}")
         print(f"Serving directory: {os.getcwd()}")
