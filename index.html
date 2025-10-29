@@ -183,6 +183,9 @@
     <script src="fonts/font_12x22.js"></script>
     <script src="fonts/font_16x32.js"></script>
     <script src="fonts/font_24x48.js"></script>
+    <script src="fonts/font_number_32x48.js"></script>
+    <script src="fonts/font_segment_32x48.js"></script>
+    <script src="fonts/font_segment_24x32.js"></script>
     <!-- 引入二维码生成库（多个备选源） -->
     <script src="libs/qrcode.min.js"></script>
     <script>
@@ -213,6 +216,9 @@
                 <option value="font_12x22">12x22 字体</option>
                 <option value="font_16x32">16x32 字体</option>
                 <option value="font_24x48">24x48 字体</option>
+                <option value="font_number_32x48">数字 32x48 字体</option>
+                <option value="font_segment_24x32">7段数码管 24x32 字体</option>
+                <option value="font_segment_32x48">7段数码管 32x48 字体</option>
             </select>
         </div>
 
@@ -425,6 +431,11 @@
     <script>
         // 检查LCDFont是否正确导入
         console.log("LCDFont对象:", typeof LCDFont, LCDFont ? Object.keys(LCDFont) : "未定义");
+        if (LCDFont && LCDFont.version) {
+            console.log("LCDFont版本:", LCDFont.version);
+        } else {
+            console.warn("警告: LCDFont版本信息不可用，可能使用了旧版本！请清除浏览器缓存后刷新。");
+        }
         
         // 检查字体对象是否正确导入
         console.log("font_8x8:", typeof font_8x8, font_8x8 ? "已加载" : "未加载");
@@ -435,6 +446,9 @@
         console.log("font_12x22:", typeof font_12x22, font_12x22 ? "已加载" : "未加载");
         console.log("font_16x32:", typeof font_16x32, font_16x32 ? "已加载" : "未加载");
         console.log("font_24x48:", typeof font_24x48, font_24x48 ? "已加载" : "未加载");
+        console.log("font_number_32x48:", typeof font_number_32x48, font_number_32x48 ? "已加载" : "未加载");
+        console.log("font_segment_24x32:", typeof font_segment_24x32, font_segment_24x32 ? "已加载" : "未加载");
+        console.log("font_segment_32x48:", typeof font_segment_32x48, font_segment_32x48 ? "已加载" : "未加载");
         
         // 如果字体未加载，显示错误信息
         function checkFonts() {
@@ -771,32 +785,88 @@
             const isInvert = document.getElementById('invertText').checked;
             const font = document.getElementById('fontSelect').value;
             
-            console.log(`绘制文本: "${text}", 位置: (${x},${y}), 反显: ${isInvert}, 字体: ${font}`);
+            // 获取选择的字体对象
+            const fontObj = window[font];
+            if (!fontObj) {
+                alert(`错误：字体 ${font} 未加载！`);
+                return;
+            }
+            
+            console.log(`绘制文本: "${text}", 位置: (${x},${y}), 反显: ${isInvert}, 字体: ${font}, 数字字体: ${fontObj.isNumberFont ? '是' : '否'}`);
+            console.log(`字体对象详情:`, {
+                width: fontObj.width,
+                height: fontObj.height,
+                bytesPerChar: fontObj.bytesPerChar,
+                isNumberFont: fontObj.isNumberFont,
+                isNumberFontType: typeof fontObj.isNumberFont,
+                dataLength: fontObj.data ? fontObj.data.length : 'undefined'
+            });
             
             let currentX = x;
+            let skippedChars = 0;
             
             for (let i = 0; i < text.length; i++) {
                 const char = text.charAt(i);
                 
-                // 只处理ASCII字符
-                const cp = char.codePointAt(0);
-                if (cp > 255) {
-                    console.warn(`不支持非ASCII字符: "${char}"`);
-                    currentX += 8; // 跳过非ASCII字符
-                    continue;
+                // 检查字符是否被字体支持
+                let isSupported = false;
+                if (typeof LCDFont !== 'undefined' && typeof LCDFont.isCharSupported === 'function') {
+                    isSupported = LCDFont.isCharSupported(fontObj, char);
+                } else {
+                    // 降级处理：手动检查字符是否支持
+                    const cp = char.charCodeAt(0);
+                    if (fontObj.isNumberFont) {
+                        // 数字字体只支持 0-9
+                        isSupported = cp >= 48 && cp <= 57;
+                    } else {
+                        // 普通ASCII字体支持 0-127
+                        isSupported = cp >= 0 && cp <= 127;
+                    }
                 }
                 
-                console.log(`处理ASCII字符: "${char}", 码点: ${cp}`);
+                if (!isSupported) {
+                    if (fontObj.isNumberFont) {
+                        // 数字字体：跳过非数字字符
+                        console.log(`数字字体：跳过非数字字符 "${char}"`);
+                        skippedChars++;
+                        continue;
+                    } else {
+                        // 普通ASCII字体：跳过非ASCII字符
+                        const cp = char.codePointAt(0);
+                        console.warn(`不支持非ASCII字符: "${char}" (码点: ${cp})`);
+                        currentX += 8; // 跳过非ASCII字符
+                        continue;
+                    }
+                }
+                
+                const cp = char.codePointAt(0);
+                console.log(`处理字符: "${char}", 码点: ${cp}`);
                 
                 try {
-                    // 获取选择的字体对象
-                    const fontObj = window[font];
-                    if (!fontObj) {
-                        throw new Error(`字体 ${font} 未加载`);
-                    }
-                    
                     // 获取字符在字体数据中的索引
-                    const index = LCDFont.getCharIndex(fontObj, char);
+                    let index;
+                    if (typeof LCDFont !== 'undefined' && typeof LCDFont.getCharIndex === 'function') {
+                        index = LCDFont.getCharIndex(fontObj, char);
+                        // 验证索引是否正确（如果返回的是普通字体的索引，则重新计算）
+                        if (fontObj.isNumberFont && index >= 0) {
+                            const code = char.charCodeAt(0);
+                            // 如果是数字字体，索引应该是 (code - 48) * bytesPerChar
+                            const expectedIndex = (code - 48) * fontObj.bytesPerChar;
+                            if (index !== expectedIndex && code >= 48 && code <= 57) {
+                                console.warn(`索引计算错误！使用数字字体逻辑重新计算: index=${index} -> ${expectedIndex}`);
+                                index = expectedIndex;
+                            }
+                        }
+                    } else {
+                        // 降级处理：直接计算索引
+                        const code = char.charCodeAt(0);
+                        if (fontObj.isNumberFont) {
+                            index = (code >= 48 && code <= 57) ? (code - 48) * fontObj.bytesPerChar : -1;
+                        } else {
+                            index = code * fontObj.bytesPerChar;
+                        }
+                    }
+                    console.log(`字符 "${char}" 索引计算: code=${char.charCodeAt(0)}, isNumberFont=${fontObj.isNumberFont}, index=${index}, data.length=${fontObj.data.length}`);
                     if (index >= 0 && index < fontObj.data.length) {
                         // 从字体数据中提取字符数据
                         const charData = fontObj.data.slice(index, index + fontObj.bytesPerChar);
@@ -830,13 +900,18 @@
                         // 移动到下一个字符位置
                         currentX += fontObj.width;
                     } else {
-                        console.warn(`字符 "${char}" (码点: ${cp}) 超出字体数据范围`);
+                        console.warn(`字符 "${char}" (码点: ${cp}) 索引 ${index} 超出字体数据范围`);
                         currentX += 8; // 跳过这个字符
                     }
                 } catch (error) {
                     console.error(`处理字符 "${char}" 时出错:`, error);
                     currentX += 8; // 出错时也跳过
                 }
+            }
+            
+            // 如果是数字字体且跳过了字符，给出提示
+            if (fontObj.isNumberFont && skippedChars > 0) {
+                console.log(`数字字体模式：共跳过 ${skippedChars} 个非数字字符`);
             }
             
             drawBitmap();
@@ -1048,14 +1123,16 @@
                 }
             });
             
-            // 快速输入框支持回车键生成
+            // 快速输入框支持回车键生成（如果元素存在）
             const quickQrText = document.getElementById('quickQrText');
-            quickQrText.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    quickGenerateQR();
-                }
-            });
+            if (quickQrText) {
+                quickQrText.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        quickGenerateQR();
+                    }
+                });
+            }
         }
 
         // 更新容量提示

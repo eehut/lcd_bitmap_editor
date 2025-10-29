@@ -1,13 +1,53 @@
 /**
  * 从C语言字体文件转换的JavaScript字体库
+ * 版本: 2.0 (支持数字字体)
  */
 
 // 字体对象定义
 const LCDFont = {
+  // 版本信息
+  version: '2.0',
   // 通用方法 - 获取字符在字体数据中的索引位置
   getCharIndex: function(fontData, char) {
+    if (!fontData) {
+      console.error('[LCDFont.getCharIndex] fontData 为空');
+      return -1;
+    }
+    
     const code = char.charCodeAt(0);
-    return code * fontData.bytesPerChar;
+    
+    // 检查是否为数字字体 - 使用多种方式确保正确识别
+    const isNumFont = fontData.hasOwnProperty('isNumberFont') && fontData.isNumberFont === true;
+    
+    // 如果是数字字体，只支持 '0' - '9'
+    if (isNumFont) {
+      if (code >= 48 && code <= 57) { // '0' = 48, '9' = 57
+        const index = (code - 48) * fontData.bytesPerChar;
+        console.log(`[LCDFont.getCharIndex] 数字字体: char="${char}", code=${code}, 计算索引=${index}, data.length=${fontData.data.length}`);
+        return index;
+      } else {
+        console.warn(`[LCDFont.getCharIndex] 数字字体: 字符 "${char}" (code=${code}) 不支持`);
+        return -1; // 不支持的字符
+      }
+    }
+    
+    // 普通ASCII字体
+    const index = code * fontData.bytesPerChar;
+    console.log(`[LCDFont.getCharIndex] 普通字体: char="${char}", code=${code}, isNumberFont=${fontData.isNumberFont}, 计算索引=${index}`);
+    return index;
+  },
+  
+  // 检查字符是否被字体支持
+  isCharSupported: function(fontData, char) {
+    const code = char.charCodeAt(0);
+    
+    // 如果是数字字体，只支持 '0' - '9'
+    if (fontData.isNumberFont) {
+      return code >= 48 && code <= 57;
+    }
+    
+    // 普通ASCII字体支持0-127
+    return code >= 0 && code <= 127;
   },
 
   // 渲染字符到canvas上下文

@@ -8,6 +8,7 @@ import os
 import sys
 
 PORT = 8000
+ADDRESS = "0.0.0.0"
 
 class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     """Custom request handler with better logging"""
@@ -26,8 +27,8 @@ def main():
     
     Handler = MyHTTPRequestHandler
     
-    with socketserver.TCPServer(("0.0.0.0", PORT), Handler) as httpd:
-        address = f"http://localhost:{PORT}"
+    with socketserver.TCPServer((ADDRESS, PORT), Handler) as httpd:
+        address = f"http://{ADDRESS}:{PORT}"
         print(f"Server started at {address}")
         print(f"Serving directory: {os.getcwd()}")
         print("Press Ctrl+C to stop the server")
