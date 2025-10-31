@@ -72,12 +72,21 @@ class FontFile:
         if len(gb_bytes) != 2:
             return None
         
-        # 计算区码和位码
-        qu = gb_bytes[0] - 0xA0
-        wei = gb_bytes[1] - 0xA0
+        t1 = gb_bytes[0]
+        t2 = gb_bytes[1]
         
-        # 计算偏移量
-        offset = (94 * (qu - 1) + (wei - 1)) * self.font_code_size
+        # HZK40和HZK48字库跳过了前15个区（只包含繁体字，从第16区开始）
+        # 参考Java代码: offset = ((t1 - 0xa1 - 0x0f) * 94 + (t2 - 0xa1)) * offset_step
+        if self.width == 40 or self.width == 48:
+            # 对于40和48尺寸，跳过前15个区（0x0F = 15）
+            offset = ((t1 - 0xA1 - 0x0F) * 94 + (t2 - 0xA1)) * self.font_code_size
+        else:
+            # 对于12, 16, 24, 32尺寸，使用标准GB2312偏移计算
+            # 计算区码和位码
+            qu = t1 - 0xA0
+            wei = t2 - 0xA0
+            offset = (94 * (qu - 1) + (wei - 1)) * self.font_code_size
+        
         return offset
 
     def get_ascii_font_data(self, char):
@@ -189,8 +198,14 @@ class FontFile:
 def main():
     # 创建一个字体字典，支持多种字体
     fonts = {
-        "HZK12": FontFile(FontFile.CHARSET_GB2312, 12, 12, "fonts/HZK12"),
-        "HZK16": FontFile(FontFile.CHARSET_GB2312, 16, 16, "fonts/HZK16"),
+        "HZK12-1": FontFile(FontFile.CHARSET_GB2312, 12, 12, "fonts/hzk1/HZK12"),
+        "HZK16-1": FontFile(FontFile.CHARSET_GB2312, 16, 16, "fonts/hzk1/HZK16"),
+        "HZK12": FontFile(FontFile.CHARSET_GB2312, 12, 12, "fonts/hzk2/HZK12"),
+        "HZK16": FontFile(FontFile.CHARSET_GB2312, 16, 16, "fonts/hzk2/HZK16"),
+        "HZK24": FontFile(FontFile.CHARSET_GB2312, 24, 24, "fonts/hzk2/HZK24"),
+        "HZK32": FontFile(FontFile.CHARSET_GB2312, 32, 32, "fonts/hzk2/HZK32"),
+        "HZK40": FontFile(FontFile.CHARSET_GB2312, 40, 40, "fonts/hzk2/HZK40"),
+        "HZK48": FontFile(FontFile.CHARSET_GB2312, 48, 48, "fonts/hzk2/HZK48"),
     }
 
     # 检查命令行参数
