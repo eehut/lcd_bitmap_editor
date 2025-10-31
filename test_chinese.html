@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>汉字功能测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #333;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+    <script src="gb2312_encoder.js"></script>
+    <script src="hzk_fonts.js"></script>
+</head>
+<body>
+    <h1>汉字功能测试页面</h1>
+    
+    <div class="test-section">
+        <h2>1. GB2312编码器测试</h2>
+        <button onclick="testGB2312Encoder()">运行测试</button>
+        <pre id="encoderTest">等待测试...</pre>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. 汉字字库加载测试</h2>
+        <button onclick="testHZKLoad()">运行测试</button>
+        <pre id="hzkLoadTest">等待测试...</pre>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. 字符提取测试</h2>
+        <button onclick="testCharExtract()">运行测试</button>
+        <pre id="charExtractTest">等待测试...</pre>
+    </div>
+
+    <script>
+        // 测试GB2312编码器
+        async function testGB2312Encoder() {
+            const output = document.getElementById('encoderTest');
+            output.innerHTML = '正在测试...\n';
+            
+            try {
+                // 等待编码器初始化
+                await gb2312Encoder.loadMapping();
+                
+                const testChars = ['中', '国', '你', '好', 'A', '1', '测', '试'];
+                let results = '测试字符编码:\n\n';
+                
+                for (const char of testChars) {
+                    const encoded = gb2312Encoder.encodeChar(char);
+                    if (encoded) {
+                        const hex = Array.from(encoded).map(b => '0x' + b.toString(16).toUpperCase().padStart(2, '0')).join(', ');
+                        results += `  '${char}' (U+${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}) -> [${hex}]\n`;
+                    } else {
+                        results += `  '${char}' -> 编码失败\n`;
+                    }
+                }
+                
+                output.innerHTML = `<span class="success">✓ 测试通过</span>\n\n${results}`;
+            } catch (error) {
+                output.innerHTML = `<span class="error">✗ 测试失败</span>\n\n错误: ${error.message}`;
+            }
+        }
+        
+        // 测试汉字字库加载
+        async function testHZKLoad() {
+            const output = document.getElementById('hzkLoadTest');
+            output.innerHTML = '正在测试...\n';
+            
+            try {
+                let results = '已注册的汉字字库:\n\n';
+                const fontNames = hzkFontManager.getFontNames();
+                
+                for (const name of fontNames) {
+                    results += `  ${name}\n`;
+                }
+                
+                // 尝试加载HZK16
+                results += '\n正在加载 HZK16...\n';
+                const success = await hzkFontManager.setCurrentFont('HZK16');
+                
+                if (success) {
+                    const font = hzkFontManager.getCurrentFont();
+                    results += `\n<span class="success">✓ HZK16 加载成功</span>\n`;
+                    results += `  尺寸: ${font.width}x${font.height}\n`;
+                    results += `  每字节数: ${font.bytesPerChar}\n`;
+                    results += `  文件大小: ${font.fontData.byteLength} 字节\n`;
+                } else {
+                    results += `\n<span class="error">✗ HZK16 加载失败</span>\n`;
+                }
+                
+                output.innerHTML = results;
+            } catch (error) {
+                output.innerHTML = `<span class="error">✗ 测试失败</span>\n\n错误: ${error.message}`;
+            }
+        }
+        
+        // 测试字符提取
+        async function testCharExtract() {
+            const output = document.getElementById('charExtractTest');
+            output.innerHTML = '正在测试...\n';
+            
+            try {
+                // 确保编码器和字库已加载
+                await gb2312Encoder.loadMapping();
+                await hzkFontManager.setCurrentFont('HZK16');
+                
+                const font = hzkFontManager.getCurrentFont();
+                const testChars = ['中', '国', 'A'];
+                
+                let results = '测试字符提取:\n\n';
+                
+                for (const char of testChars) {
+                    const charData = font.getCharData(char);
+                    if (charData) {
+                        results += `  '${char}': 提取成功, ${charData.length} 字节\n`;
+                        
+                        // 显示前8个字节
+                        const preview = Array.from(charData.slice(0, 8))
+                            .map(b => '0x' + b.toString(16).toUpperCase().padStart(2, '0'))
+                            .join(' ');
+                        results += `    前8字节: ${preview}...\n\n`;
+                    } else {
+                        results += `  '${char}': 提取失败\n\n`;
+                    }
+                }
+                
+                output.innerHTML = `<span class="success">✓ 测试通过</span>\n\n${results}`;
+            } catch (error) {
+                output.innerHTML = `<span class="error">✗ 测试失败</span>\n\n错误: ${error.message}\n${error.stack}`;
+            }
+        }
+        
+        // 页面加载完成后自动运行第一个测试
+        window.addEventListener('load', function() {
+            console.log('测试页面已加载');
+        });
+    </script>
+</body>
+</html>
+

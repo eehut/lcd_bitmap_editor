@@ -186,6 +186,9 @@
     <script src="fonts/font_number_32x48.js"></script>
     <script src="fonts/font_segment_32x48.js"></script>
     <script src="fonts/font_segment_24x32.js"></script>
+    <!-- 引入汉字字库支持 -->
+    <script src="gb2312_encoder.js"></script>
+    <script src="hzk_fonts.js"></script>
     <!-- 引入二维码生成库（多个备选源） -->
     <script src="libs/qrcode.min.js"></script>
     <script>
@@ -219,6 +222,20 @@
                 <option value="font_number_32x48">数字 32x48 字体</option>
                 <option value="font_segment_24x32">7段数码管 24x32 字体</option>
                 <option value="font_segment_32x48">7段数码管 32x48 字体</option>
+                <option value="use_hzk">使用汉字库</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <label>汉字库:</label>
+            <select id="hzkSelect" class="hzk-select">
+                <option value="">不使用</option>
+                <option value="HZK12">HZK12 (12x12)</option>
+                <option value="HZK16" selected>HZK16 (16x16)</option>
+                <option value="HZK24">HZK24 (24x24)</option>
+                <option value="HZK32">HZK32 (32x32)</option>
+                <option value="HZK40">HZK40 (40x40)</option>
+                <option value="HZK48">HZK48 (48x48)</option>
             </select>
         </div>
 
@@ -230,7 +247,7 @@
         </div>
         <div class="input-group">
             <label>文本:</label>
-            <input type="text" id="asciiText" placeholder="输入ASCII字符" style="width: 200px;">
+            <input type="text" id="asciiText" placeholder="输入文本(支持汉字)" style="width: 200px;">
             <label style="margin-left: 10px;">
                 <input type="checkbox" id="invertText"> 反显
             </label>
@@ -774,8 +791,8 @@
 
 
 
-        // 改进 drawText 函数，添加保存状态和更好的错误处理
-        function drawText() {
+        // 改进的 drawText 函数，支持汉字和ASCII混合
+        async function drawText() {
             // 保存当前状态到历史记录
             saveState();
             
@@ -783,138 +800,191 @@
             const x = parseInt(document.getElementById('textX').value);
             const y = parseInt(document.getElementById('textY').value);
             const isInvert = document.getElementById('invertText').checked;
-            const font = document.getElementById('fontSelect').value;
+            const asciiFont = document.getElementById('fontSelect').value;
+            const hzkFontName = document.getElementById('hzkSelect').value;
             
-            // 获取选择的字体对象
-            const fontObj = window[font];
-            if (!fontObj) {
-                alert(`错误：字体 ${font} 未加载！`);
-                return;
+            console.log(`绘制文本: "${text}", 位置: (${x},${y}), 反显: ${isInvert}, ASCII字体: ${asciiFont}, 汉字库: ${hzkFontName || '无'}`);
+            
+            // 检查是否使用汉字库
+            const useHzkForAscii = (asciiFont === 'use_hzk');
+            
+            // 获取ASCII字体对象（如果不使用汉字库）
+            let asciiFontObj = null;
+            if (!useHzkForAscii) {
+                asciiFontObj = window[asciiFont];
+                if (!asciiFontObj) {
+                    alert(`错误：字体 ${asciiFont} 未加载！`);
+                    return;
+                }
             }
             
-            console.log(`绘制文本: "${text}", 位置: (${x},${y}), 反显: ${isInvert}, 字体: ${font}, 数字字体: ${fontObj.isNumberFont ? '是' : '否'}`);
-            console.log(`字体对象详情:`, {
-                width: fontObj.width,
-                height: fontObj.height,
-                bytesPerChar: fontObj.bytesPerChar,
-                isNumberFont: fontObj.isNumberFont,
-                isNumberFontType: typeof fontObj.isNumberFont,
-                dataLength: fontObj.data ? fontObj.data.length : 'undefined'
-            });
+            // 获取汉字库对象
+            let hzkFont = null;
+            if (hzkFontName) {
+                hzkFont = hzkFontManager.getFont(hzkFontName);
+                if (hzkFont) {
+                    // 加载汉字库（如果尚未加载）
+                    if (!hzkFont.isLoaded) {
+                        console.log(`正在加载汉字库 ${hzkFontName}...`);
+                        const loaded = await hzkFont.load();
+                        if (!loaded) {
+                            alert(`错误：汉字库 ${hzkFontName} 加载失败！`);
+                            hzkFont = null;
+                        }
+                    }
+                } else {
+                    console.warn(`汉字库 ${hzkFontName} 未找到`);
+                }
+            }
+            
+            // 确保GB2312编码器已初始化
+            if (!gb2312Encoder.isLoaded) {
+                await gb2312Encoder.loadMapping();
+            }
             
             let currentX = x;
+            let currentY = y;
             let skippedChars = 0;
             
+            // 遍历文本中的每个字符
             for (let i = 0; i < text.length; i++) {
                 const char = text.charAt(i);
+                const charCode = char.charCodeAt(0);
+                const isAscii = charCode < 128;
                 
-                // 检查字符是否被字体支持
-                let isSupported = false;
-                if (typeof LCDFont !== 'undefined' && typeof LCDFont.isCharSupported === 'function') {
-                    isSupported = LCDFont.isCharSupported(fontObj, char);
+                let charDrawn = false;
+                
+                // 决定如何绘制字符
+                if (isAscii) {
+                    // ASCII字符
+                    if (useHzkForAscii && hzkFont) {
+                        // 使用汉字库绘制ASCII（汉字库中包含全角ASCII字符）
+                        charDrawn = hzkFont.drawChar(bitmap, char, currentX, currentY, isInvert);
+                        if (charDrawn) {
+                            currentX += hzkFont.width;
+                        }
+                    } else if (asciiFontObj) {
+                        // 使用ASCII字库绘制
+                        charDrawn = drawAsciiChar(asciiFontObj, char, currentX, currentY, isInvert);
+                        if (charDrawn) {
+                            currentX += asciiFontObj.width;
+                        }
+                    }
                 } else {
-                    // 降级处理：手动检查字符是否支持
-                    const cp = char.charCodeAt(0);
-                    if (fontObj.isNumberFont) {
-                        // 数字字体只支持 0-9
-                        isSupported = cp >= 48 && cp <= 57;
-                    } else {
-                        // 普通ASCII字体支持 0-127
-                        isSupported = cp >= 0 && cp <= 127;
-                    }
-                }
-                
-                if (!isSupported) {
-                    if (fontObj.isNumberFont) {
-                        // 数字字体：跳过非数字字符
-                        console.log(`数字字体：跳过非数字字符 "${char}"`);
-                        skippedChars++;
-                        continue;
-                    } else {
-                        // 普通ASCII字体：跳过非ASCII字符
-                        const cp = char.codePointAt(0);
-                        console.warn(`不支持非ASCII字符: "${char}" (码点: ${cp})`);
-                        currentX += 8; // 跳过非ASCII字符
-                        continue;
-                    }
-                }
-                
-                const cp = char.codePointAt(0);
-                console.log(`处理字符: "${char}", 码点: ${cp}`);
-                
-                try {
-                    // 获取字符在字体数据中的索引
-                    let index;
-                    if (typeof LCDFont !== 'undefined' && typeof LCDFont.getCharIndex === 'function') {
-                        index = LCDFont.getCharIndex(fontObj, char);
-                        // 验证索引是否正确（如果返回的是普通字体的索引，则重新计算）
-                        if (fontObj.isNumberFont && index >= 0) {
-                            const code = char.charCodeAt(0);
-                            // 如果是数字字体，索引应该是 (code - 48) * bytesPerChar
-                            const expectedIndex = (code - 48) * fontObj.bytesPerChar;
-                            if (index !== expectedIndex && code >= 48 && code <= 57) {
-                                console.warn(`索引计算错误！使用数字字体逻辑重新计算: index=${index} -> ${expectedIndex}`);
-                                index = expectedIndex;
-                            }
-                        }
-                    } else {
-                        // 降级处理：直接计算索引
-                        const code = char.charCodeAt(0);
-                        if (fontObj.isNumberFont) {
-                            index = (code >= 48 && code <= 57) ? (code - 48) * fontObj.bytesPerChar : -1;
+                    // 汉字
+                    if (hzkFont) {
+                        charDrawn = hzkFont.drawChar(bitmap, char, currentX, currentY, isInvert);
+                        if (charDrawn) {
+                            currentX += hzkFont.width;
                         } else {
-                            index = code * fontObj.bytesPerChar;
+                            console.warn(`无法绘制汉字 "${char}" (U+${charCode.toString(16).toUpperCase()})`);
                         }
-                    }
-                    console.log(`字符 "${char}" 索引计算: code=${char.charCodeAt(0)}, isNumberFont=${fontObj.isNumberFont}, index=${index}, data.length=${fontObj.data.length}`);
-                    if (index >= 0 && index < fontObj.data.length) {
-                        // 从字体数据中提取字符数据
-                        const charData = fontObj.data.slice(index, index + fontObj.bytesPerChar);
-                        
-                        // 计算每行需要的字节数
-                        const bytesPerRow = Math.ceil(fontObj.width / 8);
-                        
-                        // 绘制字符
-                        for (let row = 0; row < fontObj.height; row++) {
-                            // 计算这一行的起始索引
-                            const rowStartIndex = row * bytesPerRow;
-                            
-                            // 处理这一行的每一列（像素）
-                            for (let col = 0; col < fontObj.width; col++) {
-                                // 计算当前像素位于哪个字节
-                                const byteIndex = rowStartIndex + Math.floor(col / 8);
-                                // 计算当前像素在字节中的位置（从MSB开始）
-                                const bitPosition = 7 - (col % 8);
-                                
-                                // 从对应字节中提取位值
-                                const byte = charData[byteIndex] || 0;
-                                const bit = (byte >> bitPosition) & 0x01;
-                                
-                                // 设置位图像素
-                                if (currentX + col < bitmap[0].length && y + row < bitmap.length) {
-                                    bitmap[y + row][currentX + col] = isInvert ? !bit : bit;
-                                }
-                            }
-                        }
-                        
-                        // 移动到下一个字符位置
-                        currentX += fontObj.width;
                     } else {
-                        console.warn(`字符 "${char}" (码点: ${cp}) 索引 ${index} 超出字体数据范围`);
-                        currentX += 8; // 跳过这个字符
+                        console.warn(`汉字 "${char}" 需要汉字库支持，请选择汉字库`);
                     }
-                } catch (error) {
-                    console.error(`处理字符 "${char}" 时出错:`, error);
-                    currentX += 8; // 出错时也跳过
+                }
+                
+                if (!charDrawn) {
+                    skippedChars++;
+                    // 如果无法绘制，跳过一个字符宽度
+                    if (hzkFont) {
+                        currentX += hzkFont.width;
+                    } else if (asciiFontObj) {
+                        currentX += asciiFontObj.width;
+                    } else {
+                        currentX += 8; // 默认宽度
+                    }
                 }
             }
             
-            // 如果是数字字体且跳过了字符，给出提示
-            if (fontObj.isNumberFont && skippedChars > 0) {
-                console.log(`数字字体模式：共跳过 ${skippedChars} 个非数字字符`);
+            if (skippedChars > 0) {
+                console.log(`共跳过 ${skippedChars} 个字符`);
             }
             
             drawBitmap();
+        }
+        
+        // 绘制ASCII字符的辅助函数
+        function drawAsciiChar(fontObj, char, x, y, isInvert) {
+            const charCode = char.charCodeAt(0);
+            
+            // 检查字符是否被字体支持
+            let isSupported = false;
+            if (typeof LCDFont !== 'undefined' && typeof LCDFont.isCharSupported === 'function') {
+                isSupported = LCDFont.isCharSupported(fontObj, char);
+            } else {
+                // 降级处理：手动检查字符是否支持
+                if (fontObj.isNumberFont) {
+                    isSupported = charCode >= 48 && charCode <= 57;
+                } else {
+                    isSupported = charCode >= 0 && charCode <= 127;
+                }
+            }
+            
+            if (!isSupported) {
+                console.warn(`字符 "${char}" 不受字体 ${fontObj.width}x${fontObj.height} 支持`);
+                return false;
+            }
+            
+            try {
+                // 获取字符在字体数据中的索引
+                let index;
+                if (typeof LCDFont !== 'undefined' && typeof LCDFont.getCharIndex === 'function') {
+                    index = LCDFont.getCharIndex(fontObj, char);
+                    // 验证索引是否正确（如果返回的是普通字体的索引，则重新计算）
+                    if (fontObj.isNumberFont && index >= 0) {
+                        const expectedIndex = (charCode - 48) * fontObj.bytesPerChar;
+                        if (index !== expectedIndex && charCode >= 48 && charCode <= 57) {
+                            index = expectedIndex;
+                        }
+                    }
+                } else {
+                    // 降级处理：直接计算索引
+                    if (fontObj.isNumberFont) {
+                        index = (charCode >= 48 && charCode <= 57) ? (charCode - 48) * fontObj.bytesPerChar : -1;
+                    } else {
+                        index = charCode * fontObj.bytesPerChar;
+                    }
+                }
+                
+                if (index < 0 || index >= fontObj.data.length) {
+                    console.warn(`字符 "${char}" 索引 ${index} 超出范围`);
+                    return false;
+                }
+                
+                // 从字体数据中提取字符数据
+                const charData = fontObj.data.slice(index, index + fontObj.bytesPerChar);
+                
+                // 计算每行需要的字节数
+                const bytesPerRow = Math.ceil(fontObj.width / 8);
+                
+                // 绘制字符
+                const canvasWidth = bitmap[0].length;
+                const canvasHeight = bitmap.length;
+                
+                for (let row = 0; row < fontObj.height; row++) {
+                    const rowStartIndex = row * bytesPerRow;
+                    
+                    for (let col = 0; col < fontObj.width; col++) {
+                        const byteIndex = rowStartIndex + Math.floor(col / 8);
+                        const bitPosition = 7 - (col % 8);
+                        
+                        const byte = charData[byteIndex] || 0;
+                        const bit = (byte >> bitPosition) & 0x01;
+                        
+                        const targetX = x + col;
+                        const targetY = y + row;
+                        if (targetX >= 0 && targetX < canvasWidth && targetY >= 0 && targetY < canvasHeight) {
+                            bitmap[targetY][targetX] = isInvert ? !bit : bit;
+                        }
+                    }
+                }
+                
+                return true;
+            } catch (error) {
+                console.error(`绘制字符 "${char}" 时出错:`, error);
+                return false;
+            }
         }
 
         // 导出位图为C语言字模函数
