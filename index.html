@@ -20,11 +20,34 @@
         }
         .header {
             display: flex;
-            padding: 10px;
+            padding: 10px 20px;
             background-color: #333;
             color: white;
             align-items: center;
+            justify-content: space-between;
             height: 60px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+        .header-links {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 0.9rem;
+        }
+        .header-links a {
+            color: #4CAF50;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+        .header-links a:hover {
+            color: #66BB6A;
+            text-decoration: underline;
+        }
+        .header-links span {
+            color: #ccc;
         }
         .main-content {
             display: flex;
@@ -63,11 +86,6 @@
             flex-wrap: wrap;
             align-items: center;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        h1 {
-            margin-right: 20px;
-            font-size: 1.2rem;
-            white-space: nowrap;
         }
         .input-group {
             display: flex;
@@ -205,6 +223,11 @@
 <body>
     <div class="header">
         <h1>LCD单色液晶显示位图编辑器</h1>
+        <div class="header-links">
+            <a href="https://www.eehut.com/post/lcd_bitmap_editor/" target="_blank">使用帮助</a>
+            <a href="https://github.com/eehut/lcd_bitmap_editor" target="_blank">GitHub</a>
+            <span>问题反馈：<a href="mailto:179712066@qq.com">179712066@qq.com</a></span>
+        </div>
     </div>
     
     <div class="top-panel">
